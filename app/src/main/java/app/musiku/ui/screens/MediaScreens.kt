@@ -172,6 +172,7 @@ fun ArtistScreen(id: String, onBack: () -> Unit) {
 @Composable
 fun PlaylistScreen(id: String, onBack: () -> Unit) {
     val app = LocalApp.current
+    val ui = LocalUi.current
     val playlists by app.library.playlists.collectAsState()
     val pl = playlists.firstOrNull { it.id == id }
     var renaming by remember { mutableStateOf(false) }
@@ -183,12 +184,26 @@ fun PlaylistScreen(id: String, onBack: () -> Unit) {
         } else {
             LazyColumn(contentPadding = PaddingValues(bottom = DockInset)) {
                 item {
-                    MediaHeader(pl.tracks.firstOrNull()?.thumbs, "Playlist", pl.name, "${pl.tracks.size} lagu") {
+                    MediaHeader(
+                        pl.tracks.firstOrNull()?.thumbs,
+                        "Playlist",
+                        pl.name,
+                        listOfNotNull(
+                            if (pl.source == "spotify") "Spotify" else null,
+                            "${pl.tracks.size} lagu",
+                        ).joinToString(" · "),
+                    ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             PlayShuffleRow(pl.tracks)
                             Row2(
                                 onRename = { renaming = true },
                                 onDelete = { confirmDelete = true },
+                                onSync = if (pl.sourceId != null) {
+                                    {
+                                        app.importer.sync(pl)
+                                        ui.spotifyImportOpen = true
+                                    }
+                                } else null,
                             )
                         }
                     }
@@ -219,8 +234,11 @@ fun PlaylistScreen(id: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun Row2(onRename: () -> Unit, onDelete: () -> Unit) {
+private fun Row2(onRename: () -> Unit, onDelete: () -> Unit, onSync: (() -> Unit)? = null) {
     androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.padding(top = 4.dp)) {
+        if (onSync != null) {
+            Text("Sync", color = Tok.Accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clip(CircleShape).androidxClickable(onSync).padding(8.dp))
+        }
         Text("Ganti nama", color = Tok.Accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clip(CircleShape).androidxClickable(onRename).padding(8.dp))
         Text("Hapus", color = Tok.Accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clip(CircleShape).androidxClickable(onDelete).padding(8.dp))
     }

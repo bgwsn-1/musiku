@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.musiku.model.Track
+import app.musiku.model.Playlist
 import app.musiku.ui.LocalApp
 import app.musiku.ui.LocalUi
 import app.musiku.ui.Routes
@@ -84,6 +85,25 @@ fun LibraryScreen() {
                     color = Tok.Label2, fontSize = 15.sp, lineHeight = 19.sp,
                 )
                 Box(Modifier.padding(top = 20.dp)) { Segmented(SECTIONS, section, { section = it }) }
+                Box(Modifier.padding(top = 12.dp)) {
+                    Tappable(
+                        onClick = { ui.spotifyImportOpen = true },
+                        modifier = Modifier.fillMaxWidth().height(46.dp).clip(CircleShape).background(Tok.Fill2),
+                        description = "Import dari Spotify",
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().height(46.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(MIcons.Link, null, tint = Tok.Label1, modifier = Modifier.size(18.dp))
+                            Text(
+                                "Import dari Spotify", color = Tok.Label1, fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
+                    }
+                }
             }
         },
     ) {
@@ -93,19 +113,19 @@ fun LibraryScreen() {
                     Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         NewPlaylistTile(cardW) { creating = true }
                         playlists.firstOrNull()?.let { pl ->
-                            GridCard(pl.name, "${pl.tracks.size} lagu", pl.tracks.firstOrNull()?.thumbs, onClick = { ui.navigate(Routes.playlist(pl.id)) }, size = cardW)
+                            GridCard(pl.name, playlistMeta(pl), pl.tracks.firstOrNull()?.thumbs, onClick = { ui.navigate(Routes.playlist(pl.id)) }, size = cardW)
                         }
                     }
                 }
                 playlists.drop(1).chunked(2).forEach { pair ->
                     item(key = "pl-" + pair.first().id) {
                         Row(Modifier.padding(horizontal = 16.dp).padding(top = 24.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            pair.forEach { pl -> GridCard(pl.name, "${pl.tracks.size} lagu", pl.tracks.firstOrNull()?.thumbs, onClick = { ui.navigate(Routes.playlist(pl.id)) }, size = cardW) }
+                            pair.forEach { pl -> GridCard(pl.name, playlistMeta(pl), pl.tracks.firstOrNull()?.thumbs, onClick = { ui.navigate(Routes.playlist(pl.id)) }, size = cardW) }
                         }
                     }
                 }
                 if (playlists.isEmpty()) item {
-                    Text("Belum ada playlist. Tekan “Playlist Baru” untuk membuat yang pertama.", color = Tok.Label2, fontSize = 15.sp, modifier = Modifier.padding(20.dp))
+                    Text("Belum ada playlist. Tekan “Playlist Baru” untuk membuat yang pertama, atau import dari Spotify.", color = Tok.Label2, fontSize = 15.sp, modifier = Modifier.padding(20.dp))
                 }
             }
             1 -> if (artists.isEmpty()) item { EmptyState("Belum ada artis", "Artis muncul di sini setelah kamu menyukai lagunya.") }
@@ -150,6 +170,9 @@ fun LibraryScreen() {
         })
     }
 }
+
+private fun playlistMeta(pl: Playlist): String =
+    if (pl.source == "spotify") "Spotify · ${pl.tracks.size} lagu" else "${pl.tracks.size} lagu"
 
 @Composable
 private fun NewPlaylistTile(cardW: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {

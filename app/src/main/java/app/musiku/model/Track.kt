@@ -123,6 +123,10 @@ data class Playlist(
     val name: String,
     val createdAt: Long,
     val tracks: List<Track>,
+    /** Non-null for playlists mirrored from another service; currently only "spotify". */
+    val source: String? = null,
+    /** Spotify playlist id, kept so the playlist can be re-fetched by the Sync action. */
+    val sourceId: String? = null,
 )
 
 enum class RepeatMode { Off, All, One }

@@ -205,6 +205,17 @@ class YtMusic(private val http: OkHttpClient) {
                 .collectAll("musicResponsiveListItemRenderer")
         }
 
+    /**
+     * Songs and videos only. The Spotify import scores candidates on their own, so it has no use
+     * for the album/artist columns — skipping those two endpoints halves the requests per track.
+     */
+    suspend fun searchTracks(q: String): List<Track> = coroutineScope {
+        val songs = async { runCatching { searchRaw(q, F.Songs) }.getOrDefault(emptyList()) }
+        val videos = async { runCatching { searchRaw(q, F.Videos) }.getOrDefault(emptyList()) }
+        (songs.await().mapNotNull { songFrom(it) } + videos.await().mapNotNull { songFrom(it) })
+            .distinctBy { it.videoId }
+    }
+
     suspend fun search(q: String): SearchResults = coroutineScope {
         val songs = async { runCatching { searchRaw(q, F.Songs) }.getOrDefault(emptyList()) }
         val videos = async { runCatching { searchRaw(q, F.Videos) }.getOrDefault(emptyList()) }

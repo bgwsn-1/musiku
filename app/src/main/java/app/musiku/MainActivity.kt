@@ -1,6 +1,7 @@
 package app.musiku
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color as AColor
 import android.os.Build
@@ -37,7 +38,15 @@ class MainActivity : ComponentActivity() {
             askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         val app = application as MusikuApp
+        app.handleIntent(intent)
         app.player // connect to the playback service right away
         setContent { MusikuTheme { AppRoot(app) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // launchMode="singleTask": a share/VIEW while the app is running lands here.
+        (application as MusikuApp).handleIntent(intent)
     }
 }

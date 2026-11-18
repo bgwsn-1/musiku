@@ -68,6 +68,7 @@ import app.musiku.ui.components.BottomTabs
 import app.musiku.ui.components.InfoDialog
 import app.musiku.ui.components.MiniPlayer
 import app.musiku.ui.components.MusikuLoading
+import app.musiku.ui.components.SpotifyImportDialog
 import app.musiku.ui.components.TrackMenu
 import app.musiku.ui.components.UpdatePrompt
 import app.musiku.ui.nowplaying.NowPlayingActions
@@ -120,6 +121,17 @@ fun AppRoot(app: MusikuApp) {
             toast = m
             delay(1900)
             if (toast == m) toast = null
+        }
+    }
+
+    // Spotify share-sheet / VIEW intent: open the import sheet already working on the link.
+    LaunchedEffect(Unit) {
+        app.pendingSpotify.collect { link ->
+            if (link != null) {
+                ui.spotifyImportOpen = true
+                app.importer.import(link)
+                app.pendingSpotify.value = null
+            }
         }
     }
 
@@ -305,6 +317,7 @@ fun AppRoot(app: MusikuApp) {
             }
             ui.addToPlaylist?.let { t -> AddToPlaylistSheet(t) { ui.addToPlaylist = null } }
             ui.infoTrack?.let { t -> InfoDialog(t) { ui.infoTrack = null } }
+            SpotifyImportDialog(ui.spotifyImportOpen) { ui.spotifyImportOpen = false }
         }
     }
 }

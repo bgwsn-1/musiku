@@ -25,6 +25,7 @@ class UiState {
     var infoTrack by mutableStateOf<Track?>(null)
     var nowPlayingOpen by mutableStateOf(false)
     var panel by mutableStateOf<Panel?>(null)
+    var spotifyImportOpen by mutableStateOf(false)
 
     /** wired by AppRoot to NavController.navigate */
     var navigate: (String) -> Unit = {}

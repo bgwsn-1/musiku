@@ -59,6 +59,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kAutoplay = booleanPreferencesKey("autoplay")
     private val kShuffle = booleanPreferencesKey("shuffle")
     private val kRepeat = intPreferencesKey("repeat")
+    private val kSpotifyMatches = stringPreferencesKey("spotifyMatches")
 
     private val _liked = MutableStateFlow<List<Track>>(emptyList())
     private val _playlists = MutableStateFlow<List<Playlist>>(emptyList())
@@ -68,6 +69,10 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val _autoplay = MutableStateFlow(true)
     private val _shuffle = MutableStateFlow(false)
     private val _repeat = MutableStateFlow(0)
+
+    /** Spotify track URI → the YouTube Music track it was matched to, so syncs skip old work. */
+    private val spotifyCache = java.util.concurrent.ConcurrentHashMap<String, Track>()
+    private val ready = kotlinx.coroutines.CompletableDeferred<Unit>()
 
     val liked: StateFlow<List<Track>> = _liked
     val playlists: StateFlow<List<Playlist>> = _playlists
@@ -95,15 +100,24 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
                         name = o.getString("name"),
                         createdAt = o.optLong("createdAt"),
                         tracks = parseTracks(o.optJSONArray("tracks")?.toString()),
+                        source = o.optString("source").ifEmpty { null },
+                        sourceId = o.optString("sourceId").ifEmpty { null },
                     )
                 }
             }.getOrDefault(emptyList())
+            runCatching {
+                val o = JSONObject(p[kSpotifyMatches] ?: "{}")
+                o.keys().forEach { key ->
+                    runCatching { spotifyCache[key] = o.getJSONObject(key).toTrack() }
+                }
+            }
             _crossfade.value = p[kCrossfade] ?: false
             _cfSec.value = (p[kCfSec] ?: DEFAULT_CF_SEC).takeIf { it in CF_PRESETS } ?: DEFAULT_CF_SEC
             _autoplay.value = p[kAutoplay] ?: true
             _shuffle.value = p[kShuffle] ?: false
             _repeat.value = (p[kRepeat] ?: 0).coerceIn(0, 2)
             loaded = true
+            ready.complete(Unit)
         }
     }
 
@@ -116,7 +130,11 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private fun savePlaylists() = save { p ->
         val a = JSONArray()
         _playlists.value.forEach { pl ->
-            a.put(JSONObject().put("id", pl.id).put("name", pl.name).put("createdAt", pl.createdAt).put("tracks", pl.tracks.toJsonArray()))
+            a.put(
+                JSONObject().put("id", pl.id).put("name", pl.name).put("createdAt", pl.createdAt)
+                    .put("tracks", pl.tracks.toJsonArray())
+                    .putOpt("source", pl.source).putOpt("sourceId", pl.sourceId)
+            )
         }
         p[kPlaylists] = a.toString()
     }
@@ -166,6 +184,46 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             if (it.id == id && index in it.tracks.indices) it.copy(tracks = it.tracks.toMutableList().also { l -> l.removeAt(index) }) else it
         }
         savePlaylists()
+    }
+
+    /** Insert a playlist mirrored from Spotify at the top of Pustaka. */
+    fun importPlaylist(name: String, tracks: List<Track>, sourceId: String): Playlist {
+        val pl = Playlist(
+            id = UUID.randomUUID().toString(),
+            name = name.trim().ifEmpty { "Playlist Spotify" },
+            createdAt = System.currentTimeMillis(),
+            tracks = tracks,
+            source = "spotify",
+            sourceId = sourceId,
+        )
+        _playlists.value = listOf(pl) + _playlists.value
+        savePlaylists()
+        return pl
+    }
+
+    /** Replace a mirrored playlist's tracks after a sync, keeping its id and any local rename. */
+    fun replaceTracks(id: String, tracks: List<Track>): Playlist? {
+        var updated: Playlist? = null
+        _playlists.value = _playlists.value.map {
+            if (it.id == id) it.copy(tracks = tracks).also { p -> updated = p } else it
+        }
+        if (updated != null) savePlaylists()
+        return updated
+    }
+
+    // ── spotify match cache ──────────────────────────────────────────────────
+    suspend fun awaitReady() = ready.await()
+
+    fun spotifyMatches(): Map<String, Track> = HashMap(spotifyCache)
+
+    fun saveSpotifyMatches(matches: Map<String, Track>) {
+        spotifyCache.clear()
+        spotifyCache.putAll(matches)
+        save { p ->
+            val o = JSONObject()
+            matches.forEach { (uri, track) -> o.put(uri, track.toJson()) }
+            p[kSpotifyMatches] = o.toString()
+        }
     }
 
     // ── settings ─────────────────────────────────────────────────────────────
