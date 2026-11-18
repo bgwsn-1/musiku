@@ -1,8 +1,11 @@
 package app.musiku.ui.components
 
 import app.musiku.ui.theme.MIcons
+import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -32,7 +36,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +48,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.musiku.ui.LocalApp
 import app.musiku.ui.theme.Tok
+import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
 
 /**
  * Bottom inset reserved for the floating dock (mini player, when something is queued, plus the tab
@@ -58,24 +67,32 @@ val DockInset: Dp
     }
 
 /**
- * iOS "large title" page: a 34sp title that scrolls away while a small centred title and a
- * hairline fade into a translucent top bar (port of the web's large-title collapse).
+ * iOS "large title" page: a 34sp title scrolls away under a frosted-glass bar while a compact
+ * centred title and the trailing control stay fixed at the top.
  *
- * Metrics follow Convx's large title: the title's box starts 62dp from the top of the
- * window (status bar included), and the page list spaces its items by [itemSpacing].
+ * Metrics follow Convx's large title: the compact bar is 52dp of content under the status bar,
+ * and the page list spaces its items by [itemSpacing]. The bar itself is Haze glass — it samples
+ * the list behind it instead of painting a solid band — so [contentPadding] keeps the first item
+ * out from under it at rest while everything else scrolls through the blur.
  */
-/** Compact bar height: Convx's `TopBarContentHeight`. */
 private val BarHeight = 52.dp
 
-/** Scroll distance over which the bar goes from clear to solid. */
-private val BarFadeDistance = 40.dp
+/** Distance from the bar's foot over which the blur and its tint reach clear. */
+private val GlassFade = 24.dp
 
-/** The touching target around the bar's trailing control; its avatar is 28dp inside it. */
+/** Peak alpha of the dark tint over the glass. */
+private const val GlassTint = 0.55f
+
+/** Gap between the compact bar and the large title. */
+private val TitleTop = 6.dp
+
+/** The tapping target around the bar's trailing control; its avatar is 28dp inside it. */
 private val ActionTarget = 48.dp
 
 /** Half of [ActionTarget] minus the avatar, used to land the circle on the content gutter. */
 private val ActionInset = 10.dp
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LargeTitleList(
     title: String,
@@ -90,95 +107,124 @@ fun LargeTitleList(
     gutter: Dp = 16.dp,
     content: LazyListScope.() -> Unit,
 ) {
-    val threshold = with(LocalDensity.current) { 56.dp.toPx() }
-    val collapsed by remember { derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > threshold } }
-    val bar by animateFloatAsState(if (collapsed) 1f else 0f, tween(180), label = "bar")
+    val density = LocalDensity.current
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val window = Tok.Window
-    val fadeDistance = with(LocalDensity.current) { BarFadeDistance.toPx() }
-    // Solid before anything but the title can reach the bar, so text never lands on artwork.
-    val barSolid = remember(state, fadeDistance) {
-        derivedStateOf {
-            val travelled = if (state.firstVisibleItemIndex > 0) fadeDistance
-            else state.firstVisibleItemScrollOffset.toFloat()
-            (travelled / fadeDistance).coerceIn(0f, 1f)
-        }
+    // The whole status-bar + bar strip is glass, and the list starts right below it.
+    val barHeight = statusTop + BarHeight
+    val fadeStartPx = with(density) { (barHeight - GlassFade).toPx() }
+    val fadeEndPx = with(density) { barHeight.toPx() }
+    // The large title lives inside the list, so it is "gone" once it has slid up behind the bar.
+    val collapseAt = with(density) { (TitleTop + 46.dp).toPx() }
+    val collapsed by remember {
+        derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > collapseAt }
     }
-    // The status-bar scrim stays on at every offset: the clock and battery always have something
-    // to sit on once the page is under them.
-    val scrim = remember(window) {
+    val compact by animateFloatAsState(if (collapsed) 1f else 0f, tween(180), label = "compact-title")
+
+    // The bar samples the page behind it. This has to be its own state: the app-level one is held
+    // by an ancestor of both the list and the bar, and a child of that state cannot sample the
+    // sibling that paints it.
+    val hazeState = remember { HazeState() }
+    val blurRamp = remember(fadeStartPx, fadeEndPx) {
+        HazeProgressive.verticalGradient(
+            easing = EaseOutCubic,
+            // Full strength over the bar, then out to nothing at its foot so content emerges from
+            // the blur instead of being cut by a hard line.
+            startY = fadeStartPx,
+            startIntensity = 1f,
+            endY = fadeEndPx,
+            endIntensity = 0f,
+        )
+    }
+    val style = remember(window) {
+        HazeStyle(
+            // Nothing is painted under the sampled backdrop: at rest the glass only tints the page
+            // colour, and once content slides under it the blur has something to frost.
+            backgroundColor = Color.Transparent,
+            // The tint is drawn as its own gradient below so it can fade out with the blur.
+            tints = emptyList(),
+            blurRadius = 24.dp,
+            noiseFactor = 0f,
+            // Android 11 and older cannot blur; Haze falls back to a scrim instead.
+            fallbackTint = HazeTint(window.copy(alpha = 0.85f)),
+        )
+    }
+    val tint = remember(window, barHeight) {
+        val solid = ((barHeight - GlassFade) / barHeight).coerceIn(0f, 1f)
         Brush.verticalGradient(
-            listOf(window.copy(alpha = 0.88f), window.copy(alpha = 0.30f), Color.Transparent),
+            0f to window.copy(alpha = GlassTint),
+            solid to window.copy(alpha = GlassTint),
+            1f to Color.Transparent,
         )
     }
 
     Box(modifier.fillMaxSize()) {
-        LazyColumn(
-            state = state,
-            contentPadding = PaddingValues(bottom = DockInset),
-            verticalArrangement = if (itemSpacing > 0.dp) Arrangement.spacedBy(itemSpacing) else Arrangement.Top,
-            modifier = Modifier.fillMaxSize().iosBounce(),
-        ) {
-            item(key = "large-title") {
-                Box(
-                    Modifier
-                        .statusBarsPadding()
-                        .padding(
-                            top = (62.dp - statusTop).coerceAtLeast(0.dp),
-                            start = gutter,
-                            end = gutter,
-                            bottom = titleBottom,
-                        ),
-                ) {
+        // The platform's glow/stretch is switched off here: iosBounce() already owns the
+        // overscroll, and two effects would fight over the same drag.
+        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+            LazyColumn(
+                state = state,
+                contentPadding = PaddingValues(top = barHeight, bottom = DockInset),
+                verticalArrangement = if (itemSpacing > 0.dp) Arrangement.spacedBy(itemSpacing) else Arrangement.Top,
+                // The list is the Haze source: it keeps drawing edge to edge underneath the bar. The
+                // page colour sits *inside* the source, so the blur samples a filled canvas — without
+                // it the gaps around artwork are transparent and the sharp original bleeds through.
+                modifier = Modifier.fillMaxSize().haze(hazeState).background(window).iosBounce(),
+            ) {
+                item(key = "large-title") {
                     Text(
                         title, color = Tok.Label1, fontSize = 34.sp, lineHeight = 41.sp,
                         fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp,
                         maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(
+                            start = gutter, end = gutter, top = TitleTop, bottom = titleBottom,
+                        ),
                     )
                 }
+                if (header != null) item(key = "header") { header() }
+                content()
             }
-            if (header != null) item(key = "header") { header() }
-            content()
         }
 
-        // The bar is a sibling of the list, not part of it: it owns its background and its
-        // insets, and the page scrolls underneath instead of dragging the header along.
+        // The bar is a sibling of the list, not part of it, and it paints blur + tint instead of a
+        // solid colour — the page keeps scrolling underneath the glass.
         Box(
             Modifier
                 .fillMaxWidth()
-                .drawBehind {
-                    val solid = barSolid.value
-                    if (solid > 0f) drawRect(window.copy(alpha = solid))
-                    drawRect(scrim)
+                .height(barHeight)
+                .hazeChild(hazeState, style = style) {
+                    blurEnabled = true
+                    progressive = blurRamp
                 }
-                .statusBarsPadding()
-                .height(BarHeight),
+                .background(tint),
         ) {
-            Text(
-                title,
-                color = Tok.Label1,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-0.25).sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.Center)
-                    .padding(horizontal = gutter + ActionTarget)
-                    .alpha(bar)
-                    .graphicsLayer { translationY = (1f - bar) * 8.dp.toPx() },
-            )
-            if (actions != null) {
-                Box(
-                    Modifier
-                        .align(Alignment.CenterEnd)
-                        // The target is wider than the avatar and centres it, so shave half the
-                        // slack off the edge: the visible circle lands on the content gutter.
-                        .padding(end = (gutter - ActionInset).coerceAtLeast(0.dp)),
-                ) {
-                    actions()
+            Box(Modifier.fillMaxSize().statusBarsPadding()) {
+                Text(
+                    title,
+                    color = Tok.Label1,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.25).sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.Center)
+                        .padding(horizontal = gutter + ActionTarget)
+                        .alpha(compact)
+                        .graphicsLayer { translationY = (1f - compact) * 8.dp.toPx() },
+                )
+                if (actions != null) {
+                    Box(
+                        Modifier
+                            .align(Alignment.CenterEnd)
+                            // The target is wider than the avatar and centres it, so shave half the
+                            // slack off the edge: the visible circle lands on the content gutter.
+                            .padding(end = (gutter - ActionInset).coerceAtLeast(0.dp)),
+                    ) {
+                        actions()
+                    }
                 }
             }
         }
