@@ -111,6 +111,7 @@ fun HomeScreen() {
         "Beranda",
         titleBottom = 4.dp,
         itemSpacing = HomeItemSpacing,
+        gutter = HomeGutter,
         // Convx keeps the account avatar at the right end of the bar; here it is the way
         // into Settings.
         actions = { ProfileButton(onClick = { ui.navigate(Routes.Settings) }) },

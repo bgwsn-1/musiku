@@ -7,8 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,9 +32,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -64,65 +64,95 @@ val DockInset: Dp
  * Metrics follow Convx's large title: the title's box starts 62dp from the top of the
  * window (status bar included), and the page list spaces its items by [itemSpacing].
  */
+/** Compact bar height: Convx's `TopBarContentHeight`. */
+private val BarHeight = 52.dp
+
+/** Scroll distance over which the bar goes from clear to solid. */
+private val BarFadeDistance = 40.dp
+
+/** The touching target around the bar's trailing control; its avatar is 28dp inside it. */
+private val ActionTarget = 48.dp
+
+/** Half of [ActionTarget] minus the avatar, used to land the circle on the content gutter. */
+private val ActionInset = 10.dp
+
 @Composable
 fun LargeTitleList(
     title: String,
     modifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     header: (@Composable () -> Unit)? = null,
-    /** Trailing controls pinned to the title's baseline (a settings gear, an avatar…). */
+    /** Trailing controls pinned to the bar's right edge (an avatar, a gear…). */
     actions: (@Composable () -> Unit)? = null,
-    titleBottom: androidx.compose.ui.unit.Dp = 12.dp,
+    titleBottom: Dp = 12.dp,
     itemSpacing: Dp = 0.dp,
+    /** Horizontal inset shared by the title and [actions]; match the page's content gutter. */
+    gutter: Dp = 16.dp,
     content: LazyListScope.() -> Unit,
 ) {
     val threshold = with(LocalDensity.current) { 56.dp.toPx() }
     val collapsed by remember { derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > threshold } }
     val bar by animateFloatAsState(if (collapsed) 1f else 0f, tween(180), label = "bar")
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val window = Tok.Window
+    val fadeDistance = with(LocalDensity.current) { BarFadeDistance.toPx() }
+    // Solid before anything but the title can reach the bar, so text never lands on artwork.
+    val barSolid = remember(state, fadeDistance) {
+        derivedStateOf {
+            val travelled = if (state.firstVisibleItemIndex > 0) fadeDistance
+            else state.firstVisibleItemScrollOffset.toFloat()
+            (travelled / fadeDistance).coerceIn(0f, 1f)
+        }
+    }
+    // The status-bar scrim stays on at every offset: the clock and battery always have something
+    // to sit on once the page is under them.
+    val scrim = remember(window) {
+        Brush.verticalGradient(
+            listOf(window.copy(alpha = 0.88f), window.copy(alpha = 0.30f), Color.Transparent),
+        )
+    }
 
     Box(modifier.fillMaxSize()) {
         LazyColumn(
             state = state,
-            contentPadding = PaddingValues(top = 0.dp, bottom = DockInset),
+            contentPadding = PaddingValues(bottom = DockInset),
             verticalArrangement = if (itemSpacing > 0.dp) Arrangement.spacedBy(itemSpacing) else Arrangement.Top,
+            modifier = Modifier.fillMaxSize().iosBounce(),
         ) {
             item(key = "large-title") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.statusBarsPadding()
-                        .padding(top = (62.dp - statusTop).coerceAtLeast(0.dp), start = 16.dp, end = 16.dp, bottom = titleBottom),
+                Box(
+                    Modifier
+                        .statusBarsPadding()
+                        .padding(
+                            top = (62.dp - statusTop).coerceAtLeast(0.dp),
+                            start = gutter,
+                            end = gutter,
+                            bottom = titleBottom,
+                        ),
                 ) {
                     Text(
                         title, color = Tok.Label1, fontSize = 34.sp, lineHeight = 41.sp,
                         fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp,
                         maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (actions != null) {
-                        Spacer(Modifier.weight(1f))
-                        actions()
-                    }
                 }
             }
             if (header != null) item(key = "header") { header() }
             content()
         }
-        // Web scroll-edge: an always-on gradient that fades content into the window colour and
-        // blurs 10px under the floating toolbar; the centred title fades/slides in on collapse.
+
+        // The bar is a sibling of the list, not part of it: it owns its background and its
+        // insets, and the page scrolls underneath instead of dragging the header along.
         Box(
             Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Tok.Window.copy(alpha = 0.88f),
-                        0.6f to Tok.Window.copy(alpha = 0.30f),
-                        1f to Color.Transparent,
-                    ),
-                )
+                .drawBehind {
+                    val solid = barSolid.value
+                    if (solid > 0f) drawRect(window.copy(alpha = solid))
+                    drawRect(scrim)
+                }
                 .statusBarsPadding()
-                .height(52.dp),
-            contentAlignment = Alignment.Center,
+                .height(BarHeight),
         ) {
             Text(
                 title,
@@ -132,20 +162,21 @@ fun LargeTitleList(
                 letterSpacing = (-0.25).sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
                 modifier = Modifier
-                    .padding(horizontal = 64.dp)
+                    .fillMaxWidth()
+                    .align(Alignment.Center)
+                    .padding(horizontal = gutter + ActionTarget)
                     .alpha(bar)
                     .graphicsLayer { translationY = (1f - bar) * 8.dp.toPx() },
             )
-            // Trailing controls ride the collapsed bar too, so the avatar stays put once
-            // the large title has scrolled away.
             if (actions != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
+                Box(
+                    Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(end = 16.dp)
-                        .alpha(bar),
+                        // The target is wider than the avatar and centres it, so shave half the
+                        // slack off the edge: the visible circle lands on the content gutter.
+                        .padding(end = (gutter - ActionInset).coerceAtLeast(0.dp)),
                 ) {
                     actions()
                 }

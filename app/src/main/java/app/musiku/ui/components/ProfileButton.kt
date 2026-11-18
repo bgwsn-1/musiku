@@ -28,7 +28,8 @@ fun ProfileButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val avatarPx = with(LocalDensity.current) { avatar.toPx() }
     Box(
         modifier
-            .size(36.dp)
+            // 48dp target so the circle is easy to hit; the avatar inside stays 28dp.
+            .size(48.dp)
             .clip(CircleShape)
             .pressable(description = "Pengaturan", pressScale = 0.94f, onClick = onClick),
         contentAlignment = Alignment.Center,
