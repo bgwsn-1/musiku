@@ -1,5 +1,6 @@
 package app.musiku.ui.nowplaying
 
+import app.musiku.ui.components.LiquidMetalButton
 import app.musiku.ui.theme.MIcons
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -260,19 +261,11 @@ fun NowPlayingScreen(
                     Pressable(actions.onPrev, Modifier.size(width = 88.dp, height = 72.dp), "Lagu sebelumnya") {
                         Icon(MIcons.Rewind, null, tint = Color.White, modifier = Modifier.size(width = 48.dp, height = 27.dp))
                     }
-                    Pressable(
-                        actions.onPlayPause,
-                        Modifier.size(width = 88.dp, height = 72.dp),
-                        if (state.playing) "Jeda" else "Putar",
-                    ) {
-                        // web: pause glyph 42px, play 46px nudged 2px right to sit optically centred
-                        Icon(
-                            if (state.playing) MIcons.Pause else MIcons.Play,
-                            null,
-                            tint = Color.White,
-                            modifier = Modifier
-                                .size(if (state.playing) 42.dp else 46.dp)
-                                .offset(x = if (state.playing) 0.dp else 2.dp),
+                    Box(Modifier.size(width = 88.dp, height = 72.dp), contentAlignment = Alignment.Center) {
+                        LiquidMetalButton(
+                            onClick = actions.onPlayPause,
+                            icon = if (state.playing) MIcons.Pause else MIcons.Play,
+                            contentDescription = if (state.playing) "Jeda" else "Putar",
                         )
                     }
                     Pressable(actions.onNext, Modifier.size(width = 88.dp, height = 72.dp), "Lagu berikutnya") {
