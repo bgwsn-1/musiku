@@ -4,8 +4,12 @@ import app.musiku.model.AlbumDetail
 import app.musiku.model.AlbumSummary
 import app.musiku.model.ArtistCard
 import app.musiku.model.ArtistDetail
+import app.musiku.model.BrowseCard
+import app.musiku.model.BrowseShelf
+import app.musiku.model.GenreItem
 import app.musiku.model.HomeItem
 import app.musiku.model.HomeShelf
+import app.musiku.model.OnlinePlaylist
 import app.musiku.model.SearchResults
 import app.musiku.model.Track
 import kotlinx.coroutines.Dispatchers
@@ -211,6 +215,96 @@ class YtMusic(private val http: OkHttpClient) {
             videos = videos.await().mapNotNull { songFrom(it) }.take(10),
             albums = albums.await().mapNotNull { albumFromRow(it) }.take(12),
             artists = artists.await().mapNotNull { artistFromRow(it) }.take(8),
+        )
+    }
+
+    // ── browse: moods & genres ───────────────────────────────────────────────
+
+    /** Every card of YouTube Music's moods & genres grid, with its tile colour. */
+    suspend fun genres(): List<GenreItem> = cached("genres") {
+        val root = post("browse", JSONObject().put("browseId", "FEmusic_moods_and_genres"))
+        root.collectAll("musicNavigationButtonRenderer").mapNotNull { r ->
+            val title = r.obj("buttonText").runs().firstOrNull()?.optString("text")?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            val color = (r.at("solid.leftStripeColor") as? Number)?.toLong() ?: return@mapNotNull null
+            val be = r.obj("clickCommand.browseEndpoint") ?: return@mapNotNull null
+            val id = be.str("browseId") ?: return@mapNotNull null
+            GenreItem(title, color, id, be.str("params").orEmpty())
+        }.distinctBy { it.browseId + it.params }
+    }
+
+    /** A card on a category page: playlists, artists, albums and the odd song. */
+    private fun browseCard(r: JSONObject): BrowseCard? {
+        val title = r.obj("title").runs().joinToString("") { it.optString("text") }.takeIf { it.isNotBlank() }
+            ?: return null
+        val subtitle = r.obj("subtitle").runs()
+            .map { it.optString("text") }
+            .filter { it.isNotBlank() && !isSep(it) }
+            .joinToString(" · ")
+            .takeIf { it.isNotBlank() }
+        val be = r.obj("navigationEndpoint.browseEndpoint")
+        return BrowseCard(
+            title = title,
+            subtitle = subtitle,
+            thumbs = thumbOf(r.obj("thumbnailRenderer")),
+            browseId = be?.str("browseId"),
+            videoId = r.str("navigationEndpoint.watchEndpoint.videoId"),
+            pageType = be?.str("browseEndpointContextSupportedConfigs.browseEndpointContextMusicConfig.pageType"),
+        )
+    }
+
+    suspend fun category(browseId: String, params: String): List<BrowseShelf> =
+        cached("category:$browseId:$params") {
+            val root = post("browse", JSONObject().put("browseId", browseId).put("params", params))
+            root.collectAll("musicCarouselShelfRenderer").mapNotNull { shelf ->
+                val title = shelf.obj("header.musicCarouselShelfBasicHeaderRenderer.title").runs()
+                    .joinToString("") { it.optString("text") }
+                val cards = shelf.arr("contents").objects().mapNotNull { c ->
+                    c.obj("musicTwoRowItemRenderer")?.let(::browseCard)
+                        ?: c.obj("musicResponsiveListItemRenderer")?.let { row ->
+                            songFrom(row)?.let { t ->
+                                BrowseCard(
+                                    title = t.title,
+                                    subtitle = t.artist,
+                                    thumbs = t.thumbs,
+                                    videoId = t.videoId,
+                                    pageType = "MUSIC_PAGE_TYPE_SONG",
+                                )
+                            }
+                        }
+                }
+                if (cards.isEmpty()) null else BrowseShelf(title, cards)
+            }
+        }
+
+    /** Convx borrows the lead artwork of each category page for its tile. */
+    suspend fun genreArt(item: GenreItem): String? = runCatching {
+        val cards = category(item.browseId, item.params).flatMap { it.cards }
+        (cards.firstOrNull { it.pageType == "MUSIC_PAGE_TYPE_ARTIST" } ?: cards.firstOrNull())?.thumbs
+    }.getOrNull()
+
+    suspend fun playlist(browseId: String): OnlinePlaylist = cached("playlist:$browseId") {
+        val root = post("browse", JSONObject().put("browseId", browseId))
+        val header = root.findFirst(
+            "musicResponsiveHeaderRenderer",
+            "musicDetailHeaderRenderer",
+            "musicEditablePlaylistDetailHeaderRenderer",
+        )
+        val title = header.obj("title").runs().firstOrNull()?.optString("text").orEmpty()
+        val subtitle = header.obj("subtitle").runs()
+            .map { it.optString("text") }
+            .filter { it.isNotBlank() && !isSep(it) && !it.equals("Playlist", true) }
+            .joinToString(" · ")
+            .takeIf { it.isNotBlank() }
+        val tracks = root.collectAll("musicResponsiveListItemRenderer")
+            .mapNotNull { songFrom(it) }
+            .distinctBy { it.videoId }
+        OnlinePlaylist(
+            id = browseId,
+            title = title,
+            subtitle = subtitle,
+            thumbs = thumbOf(header?.opt("thumbnail") ?: header),
+            tracks = tracks,
         )
     }
 

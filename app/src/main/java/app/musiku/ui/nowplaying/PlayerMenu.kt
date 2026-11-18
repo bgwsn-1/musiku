@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.musiku.model.Track
 import app.musiku.ui.components.pressable
+import app.musiku.ui.theme.Tok
 import app.musiku.ui.theme.glass
 import dev.chrisbanes.haze.HazeState
 
@@ -193,14 +194,27 @@ fun PlayerMenu(
     }
 }
 
+/**
+ * One row of a floating menu card. [dark] is for surfaces that are always dark — the player — where
+ * the labels stay white whatever the app theme is doing. The track menu floats over the page, so
+ * there it has to follow the theme or it would be white-on-white in light mode.
+ */
 @Composable
-private fun MenuRow(
+internal fun MenuRow(
     icon: ImageVector?,
     title: String,
     subtitle: String? = null,
     chevron: Boolean = false,
+    dark: Boolean = true,
+    danger: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val fg = when {
+        danger -> Tok.Accent
+        dark -> Color.White
+        else -> Tok.Label1
+    }
+    val sub = if (dark) Color.White.copy(alpha = 0.55f) else Tok.Label2
     Row(
         Modifier
             .fillMaxWidth()
@@ -210,14 +224,14 @@ private fun MenuRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (icon != null) Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
+        if (icon != null) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(23.dp))
         else Box(Modifier.size(23.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontSize = 17.sp, lineHeight = 20.sp)
+            Text(title, color = fg, fontSize = 17.sp, lineHeight = 20.sp)
             if (!subtitle.isNullOrEmpty()) {
                 Text(
                     subtitle,
-                    color = Color.White.copy(alpha = 0.55f),
+                    color = sub,
                     fontSize = 15.sp,
                     lineHeight = 18.sp,
                     maxLines = 1,
@@ -229,7 +243,7 @@ private fun MenuRow(
             Icon(
                 MIcons.ChevronRight,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.4f),
+                tint = sub,
                 modifier = Modifier.size(18.dp),
             )
         }
@@ -237,12 +251,12 @@ private fun MenuRow(
 }
 
 @Composable
-private fun Sep() {
+internal fun Sep(dark: Boolean = true) {
     Box(
         Modifier
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .fillMaxWidth()
             .height(1.dp)
-            .background(Color.White.copy(alpha = 0.15f)),
+            .background(if (dark) Color.White.copy(alpha = 0.15f) else Tok.Hairline),
     )
 }

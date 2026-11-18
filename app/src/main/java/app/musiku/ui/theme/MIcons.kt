@@ -200,6 +200,17 @@ object MIcons {
         )
     }.build()
 
+    val Speaker: ImageVector = ImageVector.Builder(
+        name = "Speaker", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24f, viewportHeight = 24f,
+    ).apply {
+        addPath(
+            PathParser().parsePathString("M4 9v6h3l5 4V5L7 9H4z").toNodes(),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+    }.build()
+
     val Plus: ImageVector = ImageVector.Builder(
         name = "Plus", defaultWidth = 24.dp, defaultHeight = 24.dp,
         viewportWidth = 24f, viewportHeight = 24f,

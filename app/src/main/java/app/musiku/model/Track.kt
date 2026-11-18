@@ -70,6 +70,34 @@ data class HomeItem(
 
 data class HomeShelf(val title: String, val items: List<HomeItem>)
 
+/** One yellow/coloured card of YouTube Music's moods & genres grid. */
+data class GenreItem(
+    val title: String,
+    val color: Long,
+    val browseId: String,
+    val params: String,
+)
+
+/** A card on a category page: usually a playlist, sometimes an album, artist or song. */
+data class BrowseCard(
+    val title: String,
+    val subtitle: String? = null,
+    val thumbs: String? = null,
+    val browseId: String? = null,
+    val videoId: String? = null,
+    val pageType: String? = null,
+)
+
+data class BrowseShelf(val title: String, val cards: List<BrowseCard>)
+
+data class OnlinePlaylist(
+    val id: String,
+    val title: String,
+    val subtitle: String? = null,
+    val thumbs: String? = null,
+    val tracks: List<Track> = emptyList(),
+)
+
 data class SearchResults(
     val songs: List<Track> = emptyList(),
     val videos: List<Track> = emptyList(),

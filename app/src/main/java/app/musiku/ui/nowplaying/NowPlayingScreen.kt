@@ -1,21 +1,37 @@
 package app.musiku.ui.nowplaying
 
-import app.musiku.ui.components.LiquidMetalButton
-import app.musiku.ui.theme.MIcons
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,302 +39,178 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.coerceAtLeast
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.geometry.Offset
 import app.musiku.model.RepeatMode
-import app.musiku.ui.components.AppleBackdrop
+import app.musiku.model.Track
+import app.musiku.R
 import app.musiku.ui.components.Artwork
-import app.musiku.ui.components.PillSlider
-import app.musiku.ui.theme.Ink
+import app.musiku.ui.theme.MIcons
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
+import kotlinx.coroutines.launch
+import kotlin.math.roundToLong
 
 /**
- * Phone Now Playing. Port of components/NowPlaying.tsx: the cover bleeds from the
- * top edge and fades into a near-black, art-tinted backdrop; controls sit straight
- * on it. Swipe the handle down (or tap it / press Back) to close.
+ * Convx's Now Playing, squared skin (`ui/player/Player_v2.kt`, `PlayerV2Frame` portrait branch):
+ *
+ *   handle (54×5 at 30%) → weighted pane (spacers · 32dp-gutter square cover · meta row at 32dp)
+ *   → controls at 32dp (7dp seek that grows to 12dp on touch, 302dp transport, 341dp volume)
+ *   → 12dp-padded tab row sitting on the navigation inset.
+ *
+ * The artwork is 12dp-rounded with an 8dp shadow and shrinks to 0.729× while paused, exactly as
+ * Convx's Squared look does. Chrome below the meta row is composited with a Plus pass (Convx's
+ * `flamingoChrome`): over a dark art background that is what keeps the unplayed track and the
+ * time labels coloured instead of flat grey.
  */
 @Composable
 fun NowPlayingScreen(
     state: NowPlayingState,
     actions: NowPlayingActions,
     modifier: Modifier = Modifier,
+    // Morph staging (Convx draws the background and the page as two recorded layers): the field
+    // leads across the first fifth, the page follows from a tenth to six tenths. Lambdas so the
+    // flight stays a draw-phase read and never recomposes the player.
+    backgroundAlpha: () -> Float = { 1f },
+    contentAlpha: () -> Float = { 1f },
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val track = state.track
     val noRipple = remember { MutableInteractionSource() }
-    // The player owns its own backdrop (blurred artwork), so its menu can blur *that* — the web's
-    // PlayerMenu is a `backdrop-blur-2xl` panel over the cover, not the page behind it.
+    // The player ships its own field, so its menu samples *that* — PlayerMenu is a glass panel
+    // over the player, not over the page behind it.
     val haze = remember { HazeState() }
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Convx keeps the tab row 31dp off the screen edge, inset included.
+    val bottomBarPad = (31.dp - navBottom).coerceAtLeast(4.dp)
 
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
-    BoxWithConstraints(modifier.fillMaxSize().background(Color.Black)) {
-        val artHeight = minOf(maxWidth, maxHeight - 430.dp).coerceAtLeast(260.dp)
-
+    BoxWithConstraints(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().haze(haze)) {
-            // animated backdrop: Apple's three counter-rotating artwork layers (see AppleBackdrop)
-            AppleBackdrop(track.thumbs, Modifier.fillMaxSize())
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.9f))),
-                ),
-            )
-
-            // cover bleeds from the top edge and fades out (inside the haze node so the player
-            // menu, which floats above it, has the artwork to blur — like the web's backdrop-blur)
-            Artwork(
-                track.thumbs,
-                Modifier
-                    .fillMaxWidth()
-                    .height(artHeight)
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .drawWithContent {
-                        drawContent()
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.Black,
-                                0.58f to Color.Black,
-                                1f to Color.Transparent,
-                            ),
-                            blendMode = BlendMode.DstIn,
-                        )
-                    },
-                contentDescription = "Sampul ${track.title}",
-            )
+            // Convx's default GRADIENT field: the sleeve's top/bottom edge colours, no image on screen.
+            // The black under it fades with the field so the card can hand off to the pill.
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = backgroundAlpha() }) {
+                Box(Modifier.fillMaxSize().background(Color.Black))
+                NowPlayingBackground(track.thumbs, Modifier.fillMaxSize())
+            }
         }
 
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            // handle + source; drag down to close
-            var dragTotal by remember { mutableFloatStateOf(0f) }
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .pointerInput(Unit) {
-                        val threshold = 120.dp.toPx()
-                        detectVerticalDragGestures(
-                            onDragStart = { dragTotal = 0f },
-                            onDragEnd = {
-                                if (dragTotal > threshold) actions.onClose()
-                                dragTotal = 0f
-                            },
-                            onDragCancel = { dragTotal = 0f },
-                            onVerticalDrag = { _, dy -> dragTotal += dy },
-                        )
-                    },
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
-                    Modifier
-                        .height(32.dp)
-                        .width(112.dp)
-                        .clickable(interactionSource = noRipple, indication = null, onClick = actions.onClose),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(
-                        Modifier
-                            .size(width = 40.dp, height = 5.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.7f)),
-                    )
-                }
-                val from = track.album ?: track.artist
-                if (from != null) {
-                    Text(
-                        "Memutar dari $from",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        style = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.6f), Offset(0f, 2f), 8f)),
-                        modifier = Modifier.padding(horizontal = 48.dp).padding(top = 2.dp),
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .graphicsLayer { alpha = contentAlpha() },
+        ) {
+            PlayerHandle(onClose = actions.onClose)
+
+            // The pane owns the slack: cover centred between two weights, meta row pinned to its foot.
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                Column(Modifier.fillMaxSize()) {
+                    Spacer(Modifier.weight(1f))
+                    PlayerCover(track = track, playing = state.playing)
+                    Spacer(Modifier.weight(1f))
+                    PlayerMetaRow(
+                        track = track,
+                        liked = state.liked,
+                        actions = actions,
+                        onMore = { menuOpen = true },
                     )
                 }
             }
 
-            Spacer(Modifier.weight(1f))
-
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp)
-                    .navigationBarsPadding()
-                    .padding(bottom = 18.dp),
-            ) {
-                // title + more
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            track.title,
-                            color = Ink.Label1,
-                            fontSize = 22.sp,
-                            lineHeight = 26.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.015).em,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (track.artist != null) {
-                            Text(
-                                track.artist,
-                                color = Ink.Label3,
-                                fontSize = 19.sp,
-                                lineHeight = 23.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    Pressable(
-                        onClick = { menuOpen = true },
-                        modifier = Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.15f)),
-                        description = "Opsi lainnya",
-                    ) {
-                        Icon(MIcons.Ellipsis, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                    }
-                }
-
-                // current lyric line
-                Text(
-                    state.lyricLine,
-                    color = Ink.Label2,
-                    fontSize = 16.sp,
-                    lineHeight = 24.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .padding(top = 28.dp)
-                        .fillMaxWidth()
-                        .height(24.dp)
-                        .clickable(interactionSource = noRipple, indication = null, onClick = actions.onLyrics),
+            Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp)) {
+                PlayerSeek(state = state, actions = actions)
+                Spacer(Modifier.height(30.dp)) // Space between the timeline and transport controls.
+                PlayerTransport(
+                    playing = state.playing,
+                    actions = actions,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
-
-                // progress
-                val dur = state.durationSec
-                PillSlider(
-                    fraction = if (dur > 0f) state.positionSec / dur else 0f,
-                    onChange = { actions.onSeek(it * dur) },
-                    modifier = Modifier.padding(top = 6.dp),
-                    commitOnRelease = true,
-                    enabled = dur > 0f,
-                    metalFill = true,
+                Spacer(Modifier.height(23.dp)) // Leave room for the volume control's touch target.
+                PlayerVolume(
+                    volume = state.volume,
+                    onVolume = actions.onVolume,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    val small = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Ink.Label2)
-                    Text(fmt(state.positionSec), style = small)
-                    Text(if (dur > 0f) "-" + fmt(dur - state.positionSec) else "--:--", style = small)
-                }
-
-                // transport: bare glyphs
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 20.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Pressable(actions.onPrev, Modifier.size(width = 88.dp, height = 72.dp), "Lagu sebelumnya") {
-                        Icon(MIcons.Rewind, null, tint = Color.White, modifier = Modifier.size(width = 48.dp, height = 27.dp))
-                    }
-                    Box(Modifier.size(width = 88.dp, height = 72.dp), contentAlignment = Alignment.Center) {
-                        LiquidMetalButton(
-                            onClick = actions.onPlayPause,
-                            icon = if (state.playing) MIcons.Pause else MIcons.Play,
-                            contentDescription = if (state.playing) "Jeda" else "Putar",
-                        )
-                    }
-                    Pressable(actions.onNext, Modifier.size(width = 88.dp, height = 72.dp), "Lagu berikutnya") {
-                        Icon(MIcons.FastForward, null, tint = Color.White, modifier = Modifier.size(width = 48.dp, height = 27.dp))
-                    }
-                }
-
-                // volume
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(MIcons.VolumeMute, null, tint = Ink.Label2, modifier = Modifier.size(18.dp))
-                    PillSlider(
-                        fraction = state.volume,
-                        onChange = actions.onVolume,
-                        modifier = Modifier.weight(1f),
-                        barHeight = 6.dp,
-                        growWhenDragging = false,
-                        trackColor = Ink.Track,
-                    )
-                    Icon(MIcons.Volume, null, tint = Ink.Label2, modifier = Modifier.size(18.dp))
-                }
-
-                // tools
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    ToolButton(state.lyricsOpen, MIcons.LyricsQuote, "Lirik", actions.onLyrics)
-                    ToolButton(state.shuffle, MIcons.Shuffle, "Acak", actions.onShuffle)
-                    ToolButton(
-                        state.repeat != RepeatMode.Off,
-                        if (state.repeat == RepeatMode.One) MIcons.RepeatOne else MIcons.Repeat,
-                        "Ulangi",
-                        actions.onRepeat,
-                    )
-                    ToolButton(state.queueOpen, MIcons.List, "Antrian", actions.onQueue)
-                }
             }
+
+            PlayerTabs(state = state, actions = actions, bottomPad = bottomBarPad)
         }
 
         // menu: scrim + floating panel that grows from the bottom-right corner
-        AnimatedVisibility(visible = menuOpen, enter = fadeIn(tween(160)), exit = fadeOut(tween(140))) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = menuOpen,
+            enter = fadeIn(tween(160)),
+            exit = fadeOut(tween(140)),
+        ) {
             Box(
                 Modifier
                     .fillMaxSize()
                     .clickable(interactionSource = noRipple, indication = null) { menuOpen = false },
             )
         }
-        AnimatedVisibility(
+        androidx.compose.animation.AnimatedVisibility(
             visible = menuOpen,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -348,45 +240,732 @@ fun NowPlayingScreen(
     }
 }
 
-private fun fmt(sec: Float): String {
-    val s = sec.toInt().coerceAtLeast(0)
-    return "%d:%02d".format(s / 60, s % 60)
-}
-
-/** Tap target with the web build's `active:scale-90` press feedback. */
+/**
+ * Convx's handle: a 54×5 grab pill at 30% of the primary ink, 16dp above and 8dp below. Dragging
+ * it down still closes the screen (in Convx a bottom sheet owns that gesture; here the screen is
+ * the sheet).
+ */
 @Composable
-private fun Pressable(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    description: String? = null,
-    content: @Composable () -> Unit,
-) {
-    val source = remember { MutableInteractionSource() }
-    val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (pressed) 0.9f else 1f,
-        spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium),
-        label = "press",
-    )
-    Box(
-        modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .semantics { if (description != null) contentDescription = description }
-            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { content() }
-}
-
-@Composable
-private fun ToolButton(on: Boolean, icon: ImageVector, description: String, onClick: () -> Unit) {
-    Pressable(
-        onClick,
-        Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(if (on) Color.White.copy(alpha = 0.20f) else Color.Transparent),
-        description,
+private fun PlayerHandle(onClose: () -> Unit) {
+    val closeSource = remember { MutableInteractionSource() }
+    var dragTotal by remember { mutableFloatStateOf(0f) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                val threshold = 120.dp.toPx()
+                detectVerticalDragGestures(
+                    onDragStart = { dragTotal = 0f },
+                    onDragEnd = {
+                        if (dragTotal > threshold) onClose()
+                        dragTotal = 0f
+                    },
+                    onDragCancel = { dragTotal = 0f },
+                    onVerticalDrag = { _, dy -> dragTotal += dy },
+                )
+            }
+            .padding(top = 16.dp, bottom = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, contentDescription = description, tint = if (on) Color.White else Ink.Label2, modifier = Modifier.size(24.dp))
+        Box(
+            Modifier
+                .size(width = 54.dp, height = 5.dp)
+                .clip(RoundedCornerShape(2.5.dp))
+                .background(Color.White.copy(alpha = 0.3f))
+                .semantics { contentDescription = "Tutup pemutar" }
+                .clickable(interactionSource = closeSource, indication = null, onClick = onClose),
+        )
+    }
+}
+
+/** 32dp-gutter square card: 12dp corners, 8dp shadow, 0.729× while paused. */
+@Composable
+private fun PlayerCover(track: Track, playing: Boolean) {
+    val scale by animateFloatAsState(
+        // More damping on the way down so the card does not overshoot into the meta row.
+        targetValue = if (playing) 1f else 0.729f,
+        animationSpec = spring(
+            dampingRatio = if (playing) 0.6f else 0.95f,
+            stiffness = 160f,
+        ),
+        label = "coverScale",
+    )
+    SideEffect { PlayerMorph.coverScale = scale }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp)
+            .aspectRatio(1f)
+            // The morph's full end: the flight lands on this rect (not the pause-shrunk paint).
+            .onGloballyPositioned { if (it.isAttached) PlayerMorph.fullArtBounds = it.boundsInRoot() }
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                // The flying cover owns the artwork while the card travels.
+                val p = PlayerMorph.progressProvider()
+                alpha = if (p > 0.0005f && p < 0.9995f &&
+                    PlayerMorph.miniArtBounds != null && PlayerMorph.fullArtBounds != null
+                ) 0f else 1f
+            }
+            .shadow(8.dp, RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(12.dp)),
+    ) {
+        AnimatedContent(
+            targetState = track.thumbs,
+            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+            contentKey = { it },
+            label = "coverArt",
+            modifier = Modifier.fillMaxSize(),
+        ) { url ->
+            Artwork(url, Modifier.fillMaxSize(), contentDescription = "Sampul ${track.title}")
+        }
+    }
+}
+
+/** Title (SemiBold) over artist (0.78 ink), with the like and options glyphs on the right. */
+@Composable
+private fun PlayerMetaRow(
+    track: Track,
+    liked: Boolean,
+    actions: NowPlayingActions,
+    onMore: () -> Unit,
+) {
+    val metaStyle = TextStyle(
+        fontSize = 17.sp,
+        lineHeight = 22.sp,
+        letterSpacing = (-0.43).sp,
+    )
+    val albumClick = actions.onOpenAlbum
+    val artistClick = actions.onOpenArtist
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp).padding(bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            FadeSwapText(
+                text = track.title,
+                style = metaStyle,
+                color = Color.White,
+                weight = FontWeight.SemiBold,
+                modifier = if (albumClick != null) Modifier.clickable(onClick = albumClick) else Modifier,
+            )
+            if (!track.artist.isNullOrEmpty()) {
+                FadeSwapText(
+                    text = track.artist,
+                    style = metaStyle,
+                    color = Color.White.copy(alpha = 0.78f),
+                    weight = FontWeight.Normal,
+                    modifier = if (artistClick != null) Modifier.clickable(onClick = artistClick) else Modifier,
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.plusChrome()) {
+            IconButton(onClick = actions.onLike, modifier = Modifier.size(40.dp)) {
+                Crossfade(
+                    targetState = if (liked) R.drawable.flamingo_favorited else R.drawable.flamingo_favorite,
+                    animationSpec = tween(180),
+                    label = "likeGlyph",
+                ) { id ->
+                    Glyph(
+                        id = id,
+                        contentDescription = if (id == R.drawable.flamingo_favorited) "Batal suka" else "Suka",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp).likePop(liked, track.videoId),
+                    )
+                }
+            }
+            IconButton(onClick = onMore, modifier = Modifier.size(40.dp)) {
+                Glyph(
+                    id = R.drawable.flamingo_more,
+                    contentDescription = "Opsi lainnya",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Timeline: 7dp track that grows to 12dp while touched, stepped tick dots, and 10sp time labels
+ * reading elapsed / -remaining. Scrubbing is local until release, so the bar never fights the
+ * position ticker while the finger is down.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerSeek(state: NowPlayingState, actions: NowPlayingActions) {
+    val interaction = remember { MutableInteractionSource() }
+    val dragging by interaction.collectIsDraggedAsState()
+    val pressed by interaction.collectIsPressedAsState()
+    val active = dragging || pressed
+    val trackHeight by animateDpAsState(
+        targetValue = if (active) 12.dp else 7.dp,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "trackHeight",
+    )
+    var scrub by remember { mutableStateOf<Float?>(null) }
+    val duration = state.durationSec.coerceAtLeast(0f)
+    val value = (scrub ?: state.positionSec).coerceIn(0f, duration.coerceAtLeast(1f))
+    val colors = SliderDefaults.colors(
+        activeTrackColor = Color.White,
+        activeTickColor = Color.White,
+        inactiveTrackColor = Color.White.copy(alpha = 0.05f),
+        inactiveTickColor = Color.White.copy(alpha = 0.05f),
+        disabledActiveTrackColor = Color.White,
+        disabledInactiveTrackColor = Color.White.copy(alpha = 0.05f),
+        thumbColor = Color.White,
+        disabledThumbColor = Color.White,
+    )
+
+    // Keep a 23dp visual slot while the Slider retains its 48dp touch target.
+    Box(Modifier.fillMaxWidth().height(23.dp), contentAlignment = Alignment.Center) {
+        Slider(
+            value = value,
+            valueRange = 0f..duration.coerceAtLeast(1f),
+            onValueChange = { scrub = it },
+            onValueChangeFinished = {
+                scrub?.let(actions.onSeek)
+                scrub = null
+            },
+            enabled = duration > 0f,
+            colors = colors,
+            interactionSource = interaction,
+            thumb = { Spacer(Modifier.size(0.dp)) },
+            track = { sliderState ->
+                PlayerSliderTrack(
+                    sliderState = sliderState,
+                    colors = colors,
+                    trackHeight = trackHeight,
+                    modifier = Modifier
+                        .plusChrome()
+                        .graphicsLayer { alpha = 0.45f },
+                )
+            },
+            modifier = Modifier.fillMaxWidth().requiredHeight(48.dp),
+        )
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), // Align with internal slider padding
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RollingTime(
+            seconds = state.positionSec.roundToLong(),
+            prefix = "",
+            color = Color.White.copy(alpha = 0.3f),
+            modifier = Modifier.plusChrome(),
+            animate = active,
+        )
+        RollingTime(
+            seconds = if (duration > 0f) (duration - state.positionSec).roundToLong().coerceAtLeast(0) else 0,
+            prefix = "-",
+            color = Color.White.copy(alpha = 0.3f),
+            modifier = Modifier.plusChrome(),
+            animate = active,
+        )
+    }
+}
+
+/** Prev / play / next: 61dp press discs on 44dp glyphs, play 72dp; row capped at 302dp. */
+@Composable
+private fun PlayerTransport(
+    playing: Boolean,
+    actions: NowPlayingActions,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .widthIn(max = 302.dp) // 292pt glyph frame + 2x5: 61pt targets centred on 51pt glyphs
+            .fillMaxWidth()
+            .plusChrome(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val previousInteraction = remember { MutableInteractionSource() }
+        IconButton(
+            onClick = actions.onPrev,
+            interactionSource = previousInteraction,
+            modifier = Modifier
+                .size(61.dp)
+                .transportPressDisc(previousInteraction, Color.White.copy(alpha = 0.16f)),
+        ) {
+            Glyph(
+                id = R.drawable.flamingo_rewind,
+                contentDescription = "Lagu sebelumnya",
+                tint = Color.White,
+                modifier = Modifier.size(44.dp).skipGlyphPress(previousInteraction, direction = -1f),
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        val playInteraction = remember { MutableInteractionSource() }
+        IconButton(
+            onClick = actions.onPlayPause,
+            interactionSource = playInteraction,
+            modifier = Modifier
+                .size(72.dp)
+                .transportPressDisc(playInteraction, Color.White.copy(alpha = 0.16f)),
+        ) {
+            AnimatedPlayPause(
+                playing = playing,
+                modifier = Modifier.playGlyphPress(playInteraction),
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        val nextInteraction = remember { MutableInteractionSource() }
+        IconButton(
+            onClick = actions.onNext,
+            interactionSource = nextInteraction,
+            modifier = Modifier
+                .size(61.dp)
+                .transportPressDisc(nextInteraction, Color.White.copy(alpha = 0.16f)),
+        ) {
+            Glyph(
+                id = R.drawable.flamingo_fforward,
+                contentDescription = "Lagu berikutnya",
+                tint = Color.White,
+                modifier = Modifier.size(44.dp).skipGlyphPress(nextInteraction, direction = 1f),
+            )
+        }
+    }
+}
+
+/** Volume: 20dp glyph slots, 8dp gaps, 10dp track that grows to 14dp while touched. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerVolume(
+    volume: Float,
+    onVolume: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val dragging by interaction.collectIsDraggedAsState()
+    val pressed by interaction.collectIsPressedAsState()
+    val active = dragging || pressed
+    var dragVolume by remember { mutableFloatStateOf(volume) }
+    LaunchedEffect(volume) { if (!active) dragVolume = volume }
+    val shown = if (active) dragVolume else volume
+    val trackHeight by animateDpAsState(
+        targetValue = if (active) 14.dp else 10.dp,
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 600f),
+        label = "volumeTrackHeight",
+    )
+    val colors = SliderDefaults.colors(
+        activeTrackColor = Color.White.copy(alpha = 0.7f),
+        activeTickColor = Color.White.copy(alpha = 0.7f),
+        inactiveTrackColor = Color.White.copy(alpha = 0.15f),
+        inactiveTickColor = Color.White.copy(alpha = 0.15f),
+        thumbColor = Color.White,
+    )
+
+    Row(
+        modifier = modifier
+            .widthIn(max = 341.dp)
+            .fillMaxWidth()
+            // 28dp of speaker + gap on each side leaves a 285dp track matching
+            // the visible edges of the previous/next transport glyphs.
+            .plusChrome(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        QuietVolumeGlyph(level = shown, tint = Color.White)
+        Spacer(Modifier.width(8.dp))
+        Slider(
+            value = shown,
+            onValueChange = {
+                dragVolume = it
+                onVolume(it)
+            },
+            modifier = Modifier.weight(1f),
+            interactionSource = interaction,
+            thumb = { Spacer(Modifier.size(0.dp)) },
+            track = { sliderState ->
+                PlayerSliderTrack(
+                    sliderState = sliderState,
+                    colors = colors,
+                    trackHeight = trackHeight,
+                )
+            },
+        )
+        Spacer(Modifier.width(8.dp))
+        LoudVolumeGlyph(tint = Color.White)
+    }
+}
+
+/** A plain speaker; struck through at the mute glyph's 13dp so the bodies match. */
+@Composable
+private fun QuietVolumeGlyph(level: Float, tint: Color) {
+    val muted = level <= 0.01f
+    Box(Modifier.size(20.dp), contentAlignment = Alignment.CenterStart) {
+        Icon(
+            imageVector = if (muted) MIcons.VolumeMute else MIcons.Speaker,
+            contentDescription = if (muted) "Bisu" else "Volume rendah",
+            tint = tint,
+            modifier = Modifier.size(if (muted) 13.dp else 12.dp),
+        )
+    }
+}
+
+/** The loud end keeps one wave glyph at every level, so the speaker itself never resizes. */
+@Composable
+private fun LoudVolumeGlyph(tint: Color) {
+    Box(Modifier.size(20.dp), contentAlignment = Alignment.CenterEnd) {
+        Glyph(
+            id = R.drawable.speaker_wave3,
+            contentDescription = "Volume",
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/**
+ * Convx's player glyph: a vector drawable tinted flat, drawn to fit its box. The `flamingo_*`
+ * assets carry their own aspect ratio, so the box is filled without stretching.
+ */
+@Composable
+private fun Glyph(
+    @DrawableRes id: Int,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    Image(
+        painter = painterResource(id),
+        contentDescription = contentDescription,
+        contentScale = ContentScale.Fit,
+        colorFilter = ColorFilter.tint(tint),
+        modifier = modifier,
+    )
+}
+
+/**
+ * Bottom utility row: four equal thirds-of-the-screen slots (Convx's three, plus Musiku's shuffle
+ * and repeat so they stay reachable here). The active slot is a 41dp translucent disc holding a
+ * 28dp glyph; inactive slots are plain 24dp glyphs.
+ */
+@Composable
+private fun PlayerTabs(state: NowPlayingState, actions: NowPlayingActions, bottomPad: Dp) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).padding(bottom = bottomPad),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TabSlot(Modifier.weight(1f), state.lyricsOpen, onClick = actions.onLyrics) { m, c ->
+            Glyph(R.drawable.flamingo_lyrics, tint = c, modifier = m, contentDescription = "Lirik")
+        }
+        TabSlot(Modifier.weight(1f), state.shuffle, onClick = actions.onShuffle) { m, c ->
+            Glyph(R.drawable.shuffle, tint = c, modifier = m, contentDescription = "Acak")
+        }
+        TabSlot(Modifier.weight(1f), state.repeat != RepeatMode.Off, onClick = actions.onRepeat) { m, c ->
+            Glyph(
+                id = if (state.repeat == RepeatMode.One) R.drawable.repeat_one else R.drawable.repeat,
+                tint = c,
+                modifier = m,
+                contentDescription = "Ulangi",
+            )
+        }
+        TabSlot(Modifier.weight(1f), state.queueOpen, onClick = actions.onQueue) { m, c ->
+            Glyph(R.drawable.flamingo_queue, tint = c, modifier = m, contentDescription = "Antrian")
+        }
+    }
+}
+
+/** One tab slot; tint and glyph size are decided by [TabGlyph]. */
+@Composable
+private fun TabSlot(
+    modifier: Modifier,
+    active: Boolean,
+    tint: Color = Color.White.copy(alpha = 0.62f),
+    onClick: () -> Unit,
+    glyph: @Composable (Modifier, Color) -> Unit,
+) {
+    Box(modifier.plusChrome(), contentAlignment = Alignment.Center) {
+        IconButton(onClick = onClick) {
+            TabGlyph(active = active, tint = tint, glyph = glyph)
+        }
+    }
+}
+
+/** Convx's `V2TabGlyph`: plain glyph when idle, readable tinted disc when selected. */
+@Composable
+private fun TabGlyph(active: Boolean, tint: Color, glyph: @Composable (Modifier, Color) -> Unit) {
+    if (!active) {
+        glyph(Modifier.size(24.dp), tint)
+        return
+    }
+    // A real translucent fill stays visible over very dark art, where color-dodge
+    // on mid-grey can collapse back into the background.
+    val lightInk = tint.luminance() > 0.5f
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(41.dp)) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(
+                    if (lightInk) Color.White.copy(alpha = 0.34f) else tint.copy(alpha = 0.86f),
+                    CircleShape,
+                ),
+        )
+        glyph(Modifier.size(28.dp), if (lightInk) Color.Black.copy(alpha = 0.82f) else Color.White)
+    }
+}
+
+/** Play/pause pops between states: the outgoing glyph shrinks to 0.2× as the incoming springs up. */
+@Composable
+private fun AnimatedPlayPause(playing: Boolean, modifier: Modifier = Modifier) {
+    AnimatedContent(
+        targetState = playing,
+        transitionSpec = {
+            (scaleIn(spring(dampingRatio = 0.75f, stiffness = 500f), initialScale = 0.2f) + fadeIn(tween(120)))
+                .togetherWith(
+                    scaleOut(tween(100, easing = FastOutSlowInEasing), targetScale = 0.2f) + fadeOut(tween(90)),
+                )
+                .using(SizeTransform(clip = false))
+        },
+        contentKey = { it },
+        label = "playPause",
+        modifier = modifier,
+    ) { isPlaying ->
+        Glyph(
+            id = if (isPlaying) R.drawable.flamingo_pause else R.drawable.flamingo_play,
+            contentDescription = if (isPlaying) "Jeda" else "Putar",
+            tint = Color.White,
+            modifier = Modifier.size(44.dp),
+        )
+    }
+}
+
+/** Title/artist line that crossfades on change and marquees when it does not fit. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FadeSwapText(
+    text: String,
+    style: TextStyle,
+    color: Color,
+    weight: FontWeight,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedContent(
+        targetState = text,
+        transitionSpec = {
+            // Old line out, a short blank beat, new line in -- eased so neither edge shows.
+            fadeIn(tween(380, delayMillis = 120, easing = FastOutSlowInEasing)) togetherWith
+                fadeOut(tween(180, easing = FastOutSlowInEasing))
+        },
+        contentAlignment = Alignment.CenterStart,
+        label = "fadeSwapText",
+        modifier = modifier,
+    ) { value ->
+        Text(
+            value,
+            style = style,
+            color = color,
+            fontWeight = weight,
+            maxLines = 1,
+            modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1200),
+        )
+    }
+}
+
+private data class TimeDigit(val character: Char, val seconds: Long)
+
+/**
+ * Convx's `RollingPlaybackTime`: 10sp SemiBold with tabular figures on a fixed digit cell, so the
+ * label never jitters. Digits only roll while scrubbing; otherwise they change in place.
+ */
+@Composable
+private fun RollingTime(
+    seconds: Long,
+    prefix: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    animate: Boolean = false,
+) {
+    val rolling by rememberUpdatedState(animate)
+    val style = remember {
+        TextStyle(
+            fontSize = 10.sp,
+            lineHeight = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.35.sp,
+            fontFeatureSettings = "tnum",
+        )
+    }
+    val formatted = formatTime(seconds)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val digitWidth = remember(style, density) {
+        with(density) { measurer.measure("0", style).size.width.toDp() }
+    }
+    val lineHeight = with(density) { style.lineHeight.toDp() }
+    Row(modifier) {
+        if (prefix.isNotEmpty()) {
+            Text(prefix, color = color, style = style)
+        }
+        formatted.forEachIndexed { index, character ->
+            key(formatted.length - index) {
+                if (!character.isDigit()) {
+                    Text(character.toString(), color = color, style = style)
+                } else {
+                    AnimatedContent(
+                        targetState = TimeDigit(character, seconds),
+                        contentKey = { it.character },
+                        transitionSpec = {
+                            if (!rolling) {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            } else {
+                                val direction = if (targetState.seconds >= initialState.seconds) 1 else -1
+                                (slideInVertically { it * direction } + fadeIn(tween(120))) togetherWith
+                                    (slideOutVertically { -it * direction } + fadeOut(tween(100)))
+                            }
+                        },
+                        modifier = Modifier.width(digitWidth).height(lineHeight).clipToBounds(),
+                        label = "playbackTimeDigit",
+                    ) { digit ->
+                        Text(digit.character.toString(), color = color, style = style)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** `m:ss`, growing to `h:mm:ss` (and `d:hh:mm:ss`) exactly like Convx's `makeTimeString`. */
+private fun formatTime(seconds: Long): String {
+    val total = seconds.coerceAtLeast(0)
+    val day = total / 86_400
+    var rem = total % 86_400
+    val hour = rem / 3_600
+    rem %= 3_600
+    val minute = rem / 60
+    val sec = rem % 60
+    return when {
+        day > 0 -> "%d:%02d:%02d:%02d".format(day, hour, minute, sec)
+        hour > 0 -> "%d:%02d:%02d".format(hour, minute, sec)
+        else -> "%d:%02d".format(minute, sec)
+    }
+}
+
+/**
+ * Convx's `flamingoChrome`: one Plus pass over the content. Over artwork-derived backgrounds the
+ * player's chrome is white at partial alpha, and adding it keeps the tint of what is behind
+ * instead of painting flat grey over it.
+ */
+private fun Modifier.plusChrome(enabled: Boolean = true, strength: Float = 1f): Modifier =
+    if (!enabled) this else drawWithContent {
+        drawContext.canvas.saveLayer(
+            Rect(0f, 0f, size.width, size.height),
+            Paint().apply {
+                blendMode = BlendMode.Plus
+                alpha = strength
+            },
+        )
+        drawContent()
+        drawContext.canvas.restore()
+    }
+
+/** Disc behind a transport button that grows in 60ms and eases away on a stiff spring. */
+@Composable
+private fun Modifier.transportPressDisc(
+    interactionSource: MutableInteractionSource,
+    color: Color,
+): Modifier {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val disc by animateFloatAsState(
+        targetValue = if (pressed) 1f else 0f,
+        // Apply press feedback immediately, then ease it away after release.
+        animationSpec = if (pressed) tween(60) else spring(dampingRatio = 1f, stiffness = 260f),
+        label = "transportDisc",
+    )
+    return drawBehind {
+        if (disc > 0f) {
+            drawCircle(
+                color = color,
+                radius = size.minDimension / 2f * (0.85f + 0.15f * disc),
+                alpha = disc,
+            )
+        }
+    }
+}
+
+/** Play/pause glyph under the finger: shrinks to 0.2× over ~200ms while held. */
+@Composable
+private fun Modifier.playGlyphPress(interactionSource: MutableInteractionSource): Modifier {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.2f else 1f,
+        animationSpec = if (pressed) {
+            tween(220, easing = FastOutSlowInEasing)
+        } else {
+            // A touch more give on the rebound: playful, still settles inside ~350ms.
+            spring(dampingRatio = 0.6f, stiffness = 420f)
+        },
+        label = "playGlyphPress",
+    )
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+}
+
+/** Skip glyph: dips slightly under the finger, then nudges in the skip direction and back. */
+@Composable
+private fun Modifier.skipGlyphPress(interactionSource: MutableInteractionSource, direction: Float): Modifier {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.88f else 1f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
+        label = "skipGlyphScale",
+    )
+    val nudge = remember { Animatable(0f) }
+    var wasPressed by remember { mutableStateOf(false) }
+    LaunchedEffect(pressed) {
+        if (wasPressed && !pressed) {
+            nudge.animateTo(
+                0f,
+                keyframes {
+                    durationMillis = 340
+                    0f at 0
+                    1f at 130 using FastOutSlowInEasing
+                    0f at 340 using FastOutSlowInEasing
+                },
+            )
+        }
+        wasPressed = pressed
+    }
+    val nudgePx = with(LocalDensity.current) { 8.dp.toPx() }
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+        translationX = nudge.value * nudgePx * direction
+    }
+}
+
+/**
+ * Convx's heart pop: settle to a 1.4× peak in 90ms, then spring back (damping 0.35, stiffness
+ * 380). Only a like on the same song plays it; the first composition and a song change stay still.
+ */
+@Composable
+private fun Modifier.likePop(isLiked: Boolean, songId: String?): Modifier {
+    val pop = remember { Animatable(1f) }
+    // Re-keyed per song: skipping to a song with a different liked state is not a tap.
+    var settledSong by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(isLiked, songId) {
+        val sameSong = settledSong == songId
+        settledSong = songId
+        if (!sameSong) {
+            pop.snapTo(1f)
+            return@LaunchedEffect
+        }
+        if (isLiked) {
+            pop.animateTo(1.4f, tween(90))
+            pop.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = 380f))
+        }
+    }
+    return graphicsLayer {
+        scaleX = pop.value
+        scaleY = pop.value
     }
 }

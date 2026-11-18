@@ -283,6 +283,12 @@ class PlayerController(
     fun prev() = withController { it.seekToPrevious() }
     fun seek(sec: Float) = withController { it.seekTo((sec * 1000).toLong()); _position.value = sec }
 
+    /**
+     * Playhead read straight from the session, for per-frame lyric rendering. The [position]
+     * flow only ticks four times a second, which is too coarse for word sweeps.
+     */
+    fun currentPositionMs(): Long = controller?.currentPosition ?: (_position.value * 1000f).toLong()
+
     fun cycleRepeat() = withController { c ->
         val nextMode = when (_ui.value.repeat) { RepeatMode.Off -> RepeatMode.All; RepeatMode.All -> RepeatMode.One; RepeatMode.One -> RepeatMode.Off }
         c.repeatMode = when (nextMode) { RepeatMode.All -> Player.REPEAT_MODE_ALL; RepeatMode.One -> Player.REPEAT_MODE_ONE; RepeatMode.Off -> Player.REPEAT_MODE_OFF }

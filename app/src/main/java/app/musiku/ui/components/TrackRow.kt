@@ -18,10 +18,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,6 +53,10 @@ fun TrackRow(
     val state by app.player.ui.collectAsState()
     val isCurrent = state.current?.videoId == track.videoId
     val playing = isCurrent && state.playing
+    // Where the row sits, so the menu can grow out of it (and shrink back into it).
+    var rowAnchor by remember { mutableStateOf(Rect.Zero) }
+    var btnAnchor by remember { mutableStateOf(Rect.Zero) }
+    val openMenu: (Rect) -> Unit = { a -> ui.openMenu(track, onRemove, a.takeIf { !it.isEmpty }) }
 
     Row(
         modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp),
@@ -55,9 +65,9 @@ fun TrackRow(
     ) {
         Tappable(
             onClick = { if (isCurrent) app.player.toggle() else app.player.playTracks(queue, index) },
-            onLongClick = { ui.openMenu(track, onRemove) },
+            onLongClick = { openMenu(rowAnchor) },
             pressScale = 0.985f,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).onGloballyPositioned { rowAnchor = it.boundsInWindow() },
             description = "${if (playing) "Jeda" else "Putar"} ${track.title}",
         ) {
             Row(
@@ -98,7 +108,11 @@ fun TrackRow(
             }
         }
         Box(
-            Modifier.size(40.dp).clip(CircleShape).pressable { ui.openMenu(track, onRemove) },
+            Modifier
+                .size(40.dp)
+                .onGloballyPositioned { btnAnchor = it.boundsInWindow() }
+                .clip(CircleShape)
+                .pressable { openMenu(btnAnchor) },
             contentAlignment = Alignment.Center,
         ) {
             Icon(MIcons.Ellipsis, contentDescription = "Aksi untuk ${track.title}", tint = Tok.Label3, modifier = Modifier.size(20.dp))

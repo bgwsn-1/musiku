@@ -46,58 +46,6 @@ import app.musiku.ui.Routes
 import app.musiku.ui.theme.Tok
 import app.musiku.ui.theme.glassEdges
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TrackMenuSheet(track: Track, onRemove: (() -> Unit)?, onDismiss: () -> Unit) {
-    val app = LocalApp.current
-    val ui = LocalUi.current
-    val state by app.player.ui.collectAsState()
-    val liked by app.library.liked.collectAsState()
-    val isLiked = liked.any { it.videoId == track.videoId }
-    val isCurrent = state.current?.videoId == track.videoId
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        // Modal sheets render in their own window and cannot sample the page behind them, so they
-        // get the glass fill + edges without the backdrop blur.
-        containerColor = Tok.GlassFillStrong,
-        contentColor = Tok.Label1,
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .glassEdges(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .navigationBarsPadding()
-                .padding(bottom = 12.dp),
-        ) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Artwork(track.thumbs, Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).background(Tok.Fill1))
-                Column(Modifier.weight(1f)) {
-                    Text(track.title, color = Tok.Label1, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (track.artist != null) Text(track.artist, color = Tok.Label2, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(1.dp).background(Tok.Hairline))
-            fun go(f: () -> Unit) = { f(); onDismiss() }
-            SheetRow(if (isCurrent && state.playing) MIcons.Pause else MIcons.Play, if (isCurrent && state.playing) "Jeda" else "Putar",
-                go { if (isCurrent) app.player.toggle() else app.player.playTracks(listOf(track)) })
-            SheetRow(MIcons.Next, "Putar berikutnya", go { app.player.enqueue(track, next = true) })
-            SheetRow(MIcons.Queue, "Tambah ke antrian", go { app.player.enqueue(track, next = false) })
-            SheetRow(if (isLiked) MIcons.Heart else MIcons.HeartOutline, if (isLiked) "Hapus dari favorit" else "Tambah ke favorit",
-                go { app.player.toggleLike(track) })
-            SheetRow(MIcons.Plus, "Tambah ke playlist…", go { ui.addToPlaylist = track })
-            if (track.albumId != null) SheetRow(MIcons.Disc, "Lihat album", go { ui.nowPlayingOpen = false; ui.navigate(Routes.album(track.albumId)) })
-            if (track.artistId != null) SheetRow(MIcons.Mic, "Lihat artis", go { ui.nowPlayingOpen = false; ui.navigate(Routes.artist(track.artistId)) })
-            if (onRemove != null) SheetRow(MIcons.Trash, "Hapus dari playlist", go(onRemove), danger = true)
-        }
-    }
-}
-
 @Composable
 private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit, danger: Boolean = false) {
     Row(
@@ -120,7 +68,7 @@ fun AddToPlaylistSheet(track: Track, onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Tok.GlassFillStrong,
+        containerColor = Tok.Surface,
         contentColor = Tok.Label1,
     ) {
         Column(

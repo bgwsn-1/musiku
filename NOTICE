@@ -1,0 +1,17 @@
+Convx-derived work in Musiku
+============================
+
+## Flamingo lyrics renderer
+
+The lyrics renderer in
+`app/src/main/java/app/musiku/ui/lyrics/flamingo/` (FlamingoLyricView,
+LyricsFollowScroll, LyricsGlow, SweepBrush, YosUIConfig, YosMediaEvent,
+YosWrapper) is adapted from Flamingo
+(https://github.com/shouryadixitisverycool/Flamingo) by Yos-X and
+contributors, licensed under GPL-3.0.
+
+## Player glyphs and chrome
+
+The `flamingo_*` vector drawables, the shuffle/repeat glyphs, and the player
+chrome measurements in `ui/nowplaying/` are taken from Convx
+(https://github.com/convx/Convx), licensed under GPL-3.0.

@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import app.musiku.ui.theme.Tok
 import kotlinx.coroutines.delay
@@ -82,19 +83,29 @@ fun TextRoll(
 /**
  * The app's loading mark: "Musiku" rolls in, then re-rolls every few seconds so a slow feed never
  * looks like a frozen screen.
+ *
+ * @param fontSize size of the letters.
+ * @param restartKey change it to replay from the first letter.
  */
 @Composable
-fun MusikuLoading(modifier: Modifier = Modifier) {
-    var cycle by remember { mutableIntStateOf(0) }
-    LaunchedEffect(cycle) {
+fun MusikuLoading(
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = 36.sp,
+    restartKey: Any? = Unit,
+) {
+    var cycle by remember(restartKey) { mutableIntStateOf(0) }
+
+    LaunchedEffect(restartKey, cycle) {
         delay(2_600)
         cycle++
     }
+
     TextRoll(
         text = "Musiku",
         modifier = modifier,
-        style = TextStyle(fontSize = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp),
-        color = Tok.Label1,
-        restartKey = cycle,
+        style = TextStyle(fontSize = fontSize, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp),
+        // Half opacity on purpose: the mark is a whisper over the page, not a page title.
+        color = Tok.Label1.copy(alpha = 0.5f),
+        restartKey = restartKey to cycle,
     )
 }

@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,8 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -56,27 +57,45 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.musiku.MusikuApp
+import app.musiku.data.UpdateInfo
+import app.musiku.data.checkForUpdate
+import app.musiku.data.dismissUpdate
+import app.musiku.data.dismissedUpdateVersion
+import app.musiku.data.openInBrowser
 import app.musiku.ui.components.AddToPlaylistSheet
-import app.musiku.ui.components.AppleBackdrop
 import app.musiku.ui.components.BottomTabs
 import app.musiku.ui.components.InfoDialog
 import app.musiku.ui.components.MiniPlayer
-import app.musiku.ui.components.TrackMenuSheet
+import app.musiku.ui.components.MusikuLoading
+import app.musiku.ui.components.TrackMenu
+import app.musiku.ui.components.UpdatePrompt
 import app.musiku.ui.nowplaying.NowPlayingActions
+import app.musiku.ui.nowplaying.NowPlayingBackground
 import app.musiku.ui.nowplaying.NowPlayingScreen
 import app.musiku.ui.nowplaying.NowPlayingState
+import app.musiku.ui.nowplaying.LandingEchoShare
+import app.musiku.ui.nowplaying.LocalPlayerMorphProgress
+import app.musiku.ui.nowplaying.PlayerMorph
+import app.musiku.ui.nowplaying.PlayerMorphHost
+import app.musiku.ui.nowplaying.playerBackgroundAlpha
+import app.musiku.ui.nowplaying.playerContentAlpha
 import app.musiku.ui.screens.AlbumScreen
 import app.musiku.ui.screens.ArtistScreen
+import app.musiku.ui.screens.GenreScreen
 import app.musiku.ui.screens.HomeScreen
 import app.musiku.ui.screens.LibraryScreen
 import app.musiku.ui.screens.LyricsPanel
+import app.musiku.ui.screens.OnlinePlaylistScreen
 import app.musiku.ui.screens.PlaylistScreen
 import app.musiku.ui.screens.QueuePanel
 import app.musiku.ui.screens.SearchScreen
 import app.musiku.ui.screens.activeLyricIndex
 import app.musiku.ui.screens.rememberLyrics
+import app.musiku.ui.theme.LocalGlassBackdrop
 import app.musiku.ui.theme.LocalHazeState
 import app.musiku.ui.theme.Tok
+import app.musiku.ui.glass.backdrop.backdrops.rememberLayerBackdrop
+import app.musiku.ui.glass.backdrop.backdrops.layerBackdrop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -102,6 +121,22 @@ fun AppRoot(app: MusikuApp) {
         }
     }
 
+    // Update prompt: one quiet GitHub check a few seconds after launch, never blocking, never
+    // repeated for a version the user already waved away.
+    val ctx = LocalContext.current
+    var update by remember { mutableStateOf<UpdateInfo?>(null) }
+    var updateVisible by remember { mutableStateOf(false) }
+    val versionName = remember(ctx) {
+        runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
+            .getOrNull().orEmpty()
+    }
+    LaunchedEffect(versionName) {
+        delay(5_000)
+        val info = runCatching { checkForUpdate(versionName) }.getOrNull() ?: return@LaunchedEffect
+        if (dismissedUpdateVersion(ctx) == info.version) return@LaunchedEffect
+        update = info
+        updateVisible = true
+    }
     // The web build's CSS px are the source of truth: 15px text, 28px large title, 16px gutters.
     // Compose sp would otherwise grow/shrink with the system font setting, so the layout would
     // drift away from the web on any phone where the user changed font size. Pin fontScale to 1
@@ -116,9 +151,12 @@ fun AppRoot(app: MusikuApp) {
         // (dock, tab bar, mini player) blurs behind itself — the Compose equivalent of the web's
         // `backdrop-filter`. The haze node must wrap the content, never a glass surface.
         val hazeState = remember { HazeState() }
+        // The vendored Kyant backdrop records the routed page into its own layer; every glass
+        // surface samples that layer (blur + AGSL lens) instead of approximating a backdrop.
+        val glassBackdrop = rememberLayerBackdrop()
         Box(Modifier.fillMaxSize().background(Tok.Window)) {
-            CompositionLocalProvider(LocalHazeState provides hazeState) {
-                Box(Modifier.fillMaxSize().haze(hazeState)) {
+            CompositionLocalProvider(LocalHazeState provides hazeState, LocalGlassBackdrop provides glassBackdrop) {
+                Box(Modifier.fillMaxSize().layerBackdrop(glassBackdrop).haze(hazeState)) {
                     NavHost(
                         navController = nav,
                         startDestination = Routes.Home,
@@ -139,6 +177,27 @@ fun AppRoot(app: MusikuApp) {
                         composable("playlist/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                             PlaylistScreen(it.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })
                         }
+                        composable(
+                            "genre/{id}/{params}/{title}",
+                            listOf(
+                                navArgument("id") { type = NavType.StringType },
+                                navArgument("params") { type = NavType.StringType },
+                                navArgument("title") { type = NavType.StringType },
+                            ),
+                        ) {
+                            GenreScreen(
+                                browseId = it.arguments?.getString("id").orEmpty(),
+                                params = android.net.Uri.decode(it.arguments?.getString("params").orEmpty()),
+                                title = android.net.Uri.decode(it.arguments?.getString("title").orEmpty()),
+                                onBack = { nav.popBackStack() },
+                            )
+                        }
+                        composable("oplaylist/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
+                            OnlinePlaylistScreen(
+                                id = android.net.Uri.decode(it.arguments?.getString("id").orEmpty()),
+                                onBack = { nav.popBackStack() },
+                            )
+                        }
                     }
                 }
 
@@ -154,17 +213,49 @@ fun AppRoot(app: MusikuApp) {
                             else -> nav.previousBackStackEntry?.destination?.route?.takeIf { it in TabRoutes } ?: Routes.Home
                         },
                         onSelect = { selectTab(nav, it) },
+                        // Convx echoes 40% of the pill's landing dip through the bar, so the dock
+                        // lands as one piece instead of the pill bouncing alone.
+                        modifier = Modifier.graphicsLayer {
+                            translationY = PlayerMorph.landingDipPx * LandingEchoShare
+                        },
                     )
                 }
             }
 
-            // full-screen player
-            AnimatedVisibility(
+            // full-screen player: Convx's container morph (pill <-> screen), not a sheet slide.
+            PlayerMorphHost(
                 visible = ui.nowPlayingOpen && ps.current != null,
-                enter = slideInVertically(tween(380, easing = FastOutSlowInEasing)) { it },
-                exit = slideOutVertically(tween(320, easing = FastOutSlowInEasing)) { it },
+                artworkUrl = ps.current?.thumbs,
             ) {
                 NowPlayingHost(app, ui)
+            }
+
+            // update prompt
+            AnimatedVisibility(
+                visible = updateVisible && !ui.nowPlayingOpen,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                enter = fadeIn(tween(200)) + slideInVertically(tween(260)) { -it / 3 },
+                exit = fadeOut(tween(150)),
+            ) {
+                update?.let { info ->
+                    UpdatePrompt(
+                        info = info,
+                        current = versionName,
+                        haze = hazeState,
+                        onDownload = {
+                            openInBrowser(ctx, info.apkUrl ?: info.pageUrl)
+                            updateVisible = false
+                        },
+                        onDetails = { openInBrowser(ctx, info.pageUrl) },
+                        onDismiss = {
+                            scope.launch { dismissUpdate(ctx, info.version) }
+                            updateVisible = false
+                        },
+                    )
+                }
             }
 
             // toast
@@ -180,7 +271,13 @@ fun AppRoot(app: MusikuApp) {
                 )
             }
 
-            ui.menuTrack?.let { t -> TrackMenuSheet(t, ui.menuRemove) { ui.menuTrack = null; ui.menuRemove = null } }
+            ui.menuTrack?.let { t ->
+                TrackMenu(t, ui.menuRemove, hazeState) {
+                    ui.menuTrack = null
+                    ui.menuRemove = null
+                    ui.menuAnchor = null
+                }
+            }
             ui.addToPlaylist?.let { t -> AddToPlaylistSheet(t) { ui.addToPlaylist = null } }
             ui.infoTrack?.let { t -> InfoDialog(t) { ui.infoTrack = null } }
         }
@@ -276,19 +373,29 @@ private fun NowPlayingHost(app: MusikuApp, ui: UiState) {
         onCfSec = p::setCfSec,
     )
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        NowPlayingScreen(state, actions)
+    // Convx records the field and the page as two layers; the flight fades them on separate
+    // schedules. The morph progress is read in draw phase, so the player never recomposes.
+    val morphProgress: () -> Float = LocalPlayerMorphProgress.current
+
+    Box(Modifier.fillMaxSize()) {
+        NowPlayingScreen(
+            state,
+            actions,
+            backgroundAlpha = { playerBackgroundAlpha(morphProgress()) },
+            contentAlpha = { playerContentAlpha(morphProgress()) },
+        )
 
         AnimatedVisibility(
             visible = ui.panel != null,
+            // A panel is part of the same recorded page in Convx, so it fades with it.
+            modifier = Modifier.graphicsLayer { alpha = playerContentAlpha(morphProgress()) },
             enter = slideInVertically(tween(360, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200)),
             exit = slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(250)),
         ) {
             val shown = remember { mutableStateOf(ui.panel) }
             if (ui.panel != null) shown.value = ui.panel
             Box(Modifier.fillMaxSize().background(Color.Black)) {
-                AppleBackdrop(track.thumbs, Modifier.fillMaxSize(), overlayAlpha = 0.55f)
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.9f)))))
+                NowPlayingBackground(track.thumbs, Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                     when (shown.value) {
                         Panel.Lyrics -> LyricsPanel(track) { ui.panel = null }

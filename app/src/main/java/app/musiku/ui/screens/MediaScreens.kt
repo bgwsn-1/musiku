@@ -48,9 +48,9 @@ import app.musiku.ui.components.DockInset
 import app.musiku.ui.components.EmptyState
 import app.musiku.ui.components.GridCard
 import app.musiku.ui.components.Load
+import app.musiku.ui.components.MusikuLoading
 import app.musiku.ui.components.SectionTitle
 import app.musiku.ui.components.Shelf
-import app.musiku.ui.components.Skeleton
 import app.musiku.ui.components.TextPromptDialog
 import app.musiku.ui.components.pressable
 import app.musiku.ui.components.TrackRow
@@ -105,8 +105,8 @@ fun AlbumScreen(id: String, onBack: () -> Unit) {
     val load by rememberLoad(id to attempt) { app.yt.album(id) }
     DetailFrame(onBack) {
         when (val l = load) {
-            is Load.Loading -> Column(Modifier.statusBarsPadding().padding(20.dp).padding(top = 56.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Skeleton(Modifier.size(208.dp)); repeat(5) { Skeleton(Modifier.fillMaxWidth().height(52.dp)) }
+            is Load.Loading -> Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) {
+                MusikuLoading()
             }
             is Load.Err -> EmptyState("Album tidak ditemukan", "Mungkin sudah dihapus atau koneksi bermasalah.", Modifier.statusBarsPadding().padding(top = 80.dp))
             is Load.Ok -> {
@@ -137,8 +137,8 @@ fun ArtistScreen(id: String, onBack: () -> Unit) {
     val load by rememberLoad(id) { app.yt.artist(id) }
     DetailFrame(onBack) {
         when (val l = load) {
-            is Load.Loading -> Column(Modifier.statusBarsPadding().padding(20.dp).padding(top = 56.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Skeleton(Modifier.size(208.dp)); repeat(5) { Skeleton(Modifier.fillMaxWidth().height(52.dp)) }
+            is Load.Loading -> Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) {
+                MusikuLoading()
             }
             is Load.Err -> EmptyState("Artis tidak ditemukan", "Mungkin sudah dihapus atau koneksi bermasalah.", Modifier.statusBarsPadding().padding(top = 80.dp))
             is Load.Ok -> {
@@ -228,3 +228,31 @@ private fun Row2(onRename: () -> Unit, onDelete: () -> Unit) {
 
 @Composable
 private fun Modifier.androidxClickable(onClick: () -> Unit): Modifier = this.then(Modifier.pressable { onClick() })
+
+@Composable
+fun OnlinePlaylistScreen(id: String, onBack: () -> Unit) {
+    val app = LocalApp.current
+    val load by rememberLoad(id) { app.yt.playlist(id) }
+    DetailFrame(onBack) {
+        when (val l = load) {
+            is Load.Loading -> Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) { MusikuLoading() }
+            is Load.Err -> EmptyState("Playlist tidak bisa dimuat", "Cek koneksi internet lalu coba lagi.", Modifier.statusBarsPadding().padding(top = 80.dp))
+            is Load.Ok -> {
+                val p = l.value
+                LazyColumn(contentPadding = PaddingValues(bottom = DockInset)) {
+                    item {
+                        MediaHeader(
+                            p.thumbs, "Playlist", p.title,
+                            listOfNotNull(p.subtitle, if (p.tracks.isNotEmpty()) "${p.tracks.size} lagu" else null).joinToString(" · "),
+                        ) {
+                            PlayShuffleRow(p.tracks)
+                        }
+                    }
+                    itemsIndexed(p.tracks, key = { i, t -> "${t.videoId}-$i" }) { i, t ->
+                        TrackRow(t, p.tracks, i, number = i + 1, showArt = false)
+                    }
+                }
+            }
+        }
+    }
+}

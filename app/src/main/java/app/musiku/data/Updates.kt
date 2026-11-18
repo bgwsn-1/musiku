@@ -1,0 +1,112 @@
+package app.musiku.data
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import java.net.HttpURLConnection
+import java.net.URL
+
+/**
+ * Update check against GitHub Releases, the same source Convx reads.
+ *
+ * The release tag doubles as the version name (`v0.12` / `0.12`); the app compares that against
+ * its own `versionName`, so bumping `versionName` in `build.gradle.kts` is all a release has to
+ * match. The first `.apk` asset of the newest non-prerelease release is what "Unduh" opens.
+ */
+object UpdateSource {
+    /** `owner/repo` that publishes Musiku's releases. Blank disables the check entirely. */
+    const val Repo = "bgwsn-1/musiku"
+}
+
+data class UpdateInfo(
+    val version: String,
+    val notes: String?,
+    val apkUrl: String?,
+    val pageUrl: String,
+)
+
+private val Context.updateStore by preferencesDataStore(name = "updates")
+private val kDismissed = stringPreferencesKey("dismissedVersion")
+
+/** Which version the user already said "nanti" to, so it does not ask again for the same one. */
+suspend fun dismissedUpdateVersion(ctx: Context): String? =
+    runCatching { ctx.updateStore.data.first()[kDismissed] }.getOrNull()
+
+suspend fun dismissUpdate(ctx: Context, version: String) {
+    runCatching { ctx.updateStore.edit { it[kDismissed] = version } }
+}
+
+fun openInBrowser(ctx: Context, url: String) {
+    runCatching {
+        ctx.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+}
+
+/**
+ * The newest release newer than [currentVersion], or null. Network/API failures are swallowed:
+ * an update check must never be the reason the app complains on launch.
+ */
+suspend fun checkForUpdate(currentVersion: String): UpdateInfo? = withContext(Dispatchers.IO) {
+    val repo = UpdateSource.Repo
+    if (repo.isBlank() || currentVersion.isBlank()) return@withContext null
+    val body = runCatching { getJson("https://api.github.com/repos/$repo/releases?per_page=10") }
+        .onFailure { android.util.Log.w("MusikuUpdate", "fetch failed for $repo", it) }
+        .getOrNull() ?: return@withContext null
+    val releases = runCatching { JSONArray(body) }
+        .onFailure { android.util.Log.w("MusikuUpdate", "bad json", it) }
+        .getOrNull() ?: return@withContext null
+    for (i in 0 until releases.length()) {
+        val rel = runCatching { releases.getJSONObject(i) }.getOrNull() ?: continue
+        if (rel.optBoolean("draft") || rel.optBoolean("prerelease")) continue
+        val version = rel.optString("tag_name").trim().removePrefix("v").removePrefix("V")
+        if (!isNewerVersion(version, currentVersion)) continue
+        val assets = rel.optJSONArray("assets")
+        val apk = (0 until (assets?.length() ?: 0))
+            .mapNotNull { assets?.optJSONObject(it) }
+            .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
+        return@withContext UpdateInfo(
+            version = version,
+            notes = rel.optString("body").trim().take(2000).takeIf { it.isNotEmpty() },
+            apkUrl = apk?.optString("browser_download_url")?.takeIf { it.startsWith("https://") },
+            pageUrl = rel.optString("html_url"),
+        )
+    }
+    null
+}
+
+/** Dotted numeric compare: 0.12 > 0.9 > 0.8.1, non-numeric suffixes ignored. */
+fun isNewerVersion(remote: String, current: String): Boolean {
+    fun parts(v: String) = v.split('.', '-', '+', '_').mapNotNull { it.toIntOrNull() }
+    val a = parts(remote)
+    val b = parts(current)
+    if (a.isEmpty()) return false
+    for (i in 0 until maxOf(a.size, b.size)) {
+        val x = a.getOrElse(i) { 0 }
+        val y = b.getOrElse(i) { 0 }
+        if (x != y) return x > y
+    }
+    return false
+}
+
+private fun getJson(url: String): String {
+    val c = (URL(url).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 12_000
+        readTimeout = 12_000
+        setRequestProperty("Accept", "application/vnd.github+json")
+        setRequestProperty("User-Agent", "Musiku-Android")
+    }
+    return try {
+        c.inputStream.bufferedReader().use { it.readText() }
+    } finally {
+        c.disconnect()
+    }
+}
