@@ -62,13 +62,15 @@ data class HomeItem(
     val thumbs: String? = null,
     val isAlbum: Boolean = false,
     val isArtist: Boolean = false,
+    val album: String? = null,
 ) {
     fun toTrack(): Track? = videoId?.let {
-        Track(it, title, artist, albumId = browseId, artistId = artistId, thumbs = thumbs)
+        Track(it, title, artist, album = album, albumId = browseId, artistId = artistId, thumbs = thumbs)
     }
 }
 
-data class HomeShelf(val title: String, val items: List<HomeItem>)
+/** [hero] marks the shelf Home draws as Convx's tall Top Picks rail instead of a row of cards. */
+data class HomeShelf(val title: String, val items: List<HomeItem>, val hero: Boolean = false)
 
 /** One yellow/coloured card of YouTube Music's moods & genres grid. */
 data class GenreItem(

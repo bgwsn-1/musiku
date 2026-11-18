@@ -77,6 +77,16 @@ fun LibraryScreen() {
 
     LargeTitleList(
         "Pustaka",
+        actions = {
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).pressable(description = "Pengaturan") {
+                    ui.navigate(Routes.Settings)
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(MIcons.Settings, "Pengaturan", tint = Tok.Label2, modifier = Modifier.size(22.dp))
+            }
+        },
         header = {
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
                 Text(

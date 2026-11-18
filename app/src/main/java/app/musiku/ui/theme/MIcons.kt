@@ -564,6 +564,50 @@ object MIcons {
         )
     }.build()
 
+    val Settings: ImageVector = ImageVector.Builder(
+        name = "Settings", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24f, viewportHeight = 24f,
+    ).apply {
+        addPath(
+            PathParser().parsePathString("M19.14,12.94 c0.04,-0.3 0.06,-0.61 0.06,-0.94 s-0.02,-0.64 -0.07,-0.94 l2.03,-1.58 a0.49,0.49 0 0,0 0.12,-0.61 l-1.92,-3.32 a0.488,0.488 0 0,0 -0.59,-0.22 l-2.39,0.96 a7.03,7.03 0 0,0 -1.62,-0.94 l-0.36,-2.54 a0.484,0.484 0 0,0 -0.48,-0.41 h-3.84 c-0.24,0 -0.43,0.17 -0.47,0.41 l-0.36,2.54 c-0.59,0.24 -1.13,0.57 -1.62,0.94 L6.24,4.33 a0.488,0.488 0 0,0 -0.59,0.22 L3.73,7.87 c-0.12,0.21 -0.08,0.47 0.12,0.61 l2.03,1.58 c-0.05,0.3 -0.09,0.63 -0.09,0.94 s0.02,0.64 0.07,0.94 l-2.03,1.58 a0.49,0.49 0 0,0 -0.12,0.61 l1.92,3.32 c0.12,0.22 0.37,0.29 0.59,0.22 l2.39,-0.96 c0.5,0.38 1.03,0.7 1.62,0.94 l0.36,2.54 c0.05,0.24 0.24,0.41 0.48,0.41 h3.84 c0.24,0 0.44,-0.17 0.47,-0.41 l0.36,-2.54 c0.59,-0.24 1.13,-0.56 1.62,-0.94 l2.39,0.96 c0.22,0.08 0.47,0 0.59,-0.22 l1.92,-3.32 c0.12,-0.22 0.07,-0.47 -0.12,-0.61 z M12,15.6 c-1.98,0 -3.6,-1.62 -3.6,-3.6 s1.62,-3.6 3.6,-3.6 3.6,1.62 3.6,3.6 -1.62,3.6 -3.6,3.6 z").toNodes(),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+    }.build()
+
+    val Info: ImageVector = ImageVector.Builder(
+        name = "Info", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24f, viewportHeight = 24f,
+    ).apply {
+        addPath(
+            PathParser().parsePathString("M12,2 a10,10 0 1,0 0,20 a10,10 0 0,0 0,-20 z M13,17 h-2 v-6 h2 z M13,9 h-2 V7 h2 z").toNodes(),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+    }.build()
+
+    val Download: ImageVector = ImageVector.Builder(
+        name = "Download", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24f, viewportHeight = 24f,
+    ).apply {
+        addPath(
+            PathParser().parsePathString("M19,9 h-4 V3 H9 v6 H5 l7,7 z M5,18 v2 h14 v-2 z").toNodes(),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+    }.build()
+
+    val Link: ImageVector = ImageVector.Builder(
+        name = "Link", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24f, viewportHeight = 24f,
+    ).apply {
+        addPath(
+            PathParser().parsePathString("M3.9,12 c0,-1.71 1.39,-3.1 3.1,-3.1 h4 V7 H7 a5,5 0 0,0 0,10 h4 v-1.9 H7 c-1.71,0 -3.1,-1.39 -3.1,-3.1 z M8,13 h8 v-2 H8 z M17,7 h-4 v1.9 h4 c1.71,0 3.1,1.39 3.1,3.1 s-1.39,3.1 -3.1,3.1 h-4 V17 h4 a5,5 0 0,0 0,-10 z").toNodes(),
+            pathFillType = PathFillType.EvenOdd,
+            fill = SolidColor(Color.Black),
+        )
+    }.build()
+
     val LyricsQuote: ImageVector = ImageVector.Builder(
         name = "LyricsQuote", defaultWidth = 24.dp, defaultHeight = 24.dp,
         viewportWidth = 24f, viewportHeight = 24f,

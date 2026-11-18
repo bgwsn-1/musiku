@@ -316,7 +316,7 @@ class YtMusic(private val http: OkHttpClient) {
         val subRuns = c.obj("subtitle").runs()
         val meta = readMeta(subRuns)
         val vid = c.str("navigationEndpoint.watchEndpoint.videoId")
-        if (vid != null) return HomeItem(title, videoId = vid, artist = meta.artist, artistId = meta.artistId, thumbs = thumb)
+        if (vid != null) return HomeItem(title, videoId = vid, artist = meta.artist, artistId = meta.artistId, thumbs = thumb, album = meta.album)
         val bid = c.str("navigationEndpoint.browseEndpoint.browseId") ?: return null
         val type = c.str("navigationEndpoint.browseEndpoint.browseEndpointContextSupportedConfigs.browseEndpointContextMusicConfig.pageType")
         if (type != "MUSIC_PAGE_TYPE_ALBUM") return null // playlists/artists have no page in this app (same as web)
@@ -325,7 +325,7 @@ class YtMusic(private val http: OkHttpClient) {
 
     private fun homeItemFromRow(r: JSONObject): HomeItem? {
         val t = songFrom(r) ?: return null
-        return HomeItem(t.title, videoId = t.videoId, artist = t.artist, artistId = t.artistId, thumbs = t.thumbs)
+        return HomeItem(t.title, videoId = t.videoId, artist = t.artist, artistId = t.artistId, thumbs = t.thumbs, album = t.album)
     }
 
     private fun shelvesFrom(root: JSONObject): List<HomeShelf> =
@@ -367,6 +367,14 @@ class YtMusic(private val http: OkHttpClient) {
         }
         runCatching {
             val r = post("browse", JSONObject().put("browseId", "FEmusic_charts"))
+            // Convx opens Home on Top Picks; YouTube's charts page carries its own top-songs
+            // carousel, which is the closest real feed Musiku has to that rail.
+            val top = shelvesFrom(r)
+                .map { sh -> sh.copy(items = sh.items.filter { it.videoId != null }.distinctBy { it.videoId }) }
+                .firstOrNull { it.items.size >= 4 }
+            if (top != null) {
+                shelves.add(0, HomeShelf("Pilihan teratas untukmu", top.items.take(12), hero = true))
+            }
             val artists = r.collectAll("musicResponsiveListItemRenderer").mapNotNull { row ->
                 val name = flexRuns(row, 0).firstOrNull()?.optString("text")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 val id = row.str("navigationEndpoint.browseEndpoint.browseId")

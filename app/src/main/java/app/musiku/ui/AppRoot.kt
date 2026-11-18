@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
@@ -84,6 +85,7 @@ import app.musiku.ui.screens.ArtistScreen
 import app.musiku.ui.screens.GenreScreen
 import app.musiku.ui.screens.HomeScreen
 import app.musiku.ui.screens.LibraryScreen
+import app.musiku.ui.screens.SettingsScreen
 import app.musiku.ui.screens.LyricsPanel
 import app.musiku.ui.screens.OnlinePlaylistScreen
 import app.musiku.ui.screens.PlaylistScreen
@@ -137,6 +139,25 @@ fun AppRoot(app: MusikuApp) {
         update = info
         updateVisible = true
     }
+    // Settings asks on demand: ignore the earlier "Nanti", since this is an explicit tap.
+    SideEffect {
+        ui.checkUpdate = {
+            scope.launch {
+                val msg = "Memeriksa pembaruan…"
+                toast = msg
+                val info = runCatching { checkForUpdate(versionName) }.getOrNull()
+                if (info != null) {
+                    update = info
+                    updateVisible = true
+                    if (toast == msg) toast = null
+                } else {
+                    toast = "Kamu sudah di versi terbaru ($versionName)"
+                    delay(1_900)
+                    if (toast == "Kamu sudah di versi terbaru ($versionName)") toast = null
+                }
+            }
+        }
+    }
     // The web build's CSS px are the source of truth: 15px text, 28px large title, 16px gutters.
     // Compose sp would otherwise grow/shrink with the system font setting, so the layout would
     // drift away from the web on any phone where the user changed font size. Pin fontScale to 1
@@ -168,6 +189,9 @@ fun AppRoot(app: MusikuApp) {
                         composable(Routes.Home) { HomeScreen() }
                         composable(Routes.Search) { SearchScreen() }
                         composable(Routes.Library) { LibraryScreen() }
+                        composable(Routes.Settings) {
+                            SettingsScreen(onBack = { nav.popBackStack() })
+                        }
                         composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                             AlbumScreen(it.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })
                         }
@@ -201,8 +225,9 @@ fun AppRoot(app: MusikuApp) {
                     }
                 }
 
-                // floating dock: mini player (when something is queued) + tab bar
-                Column(
+                // floating dock: mini player (when something is queued) + tab bar.
+                // Settings is a page pushed over the tabs, the way Convx renders it.
+                if (route != Routes.Settings) Column(
                     Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 12.dp).padding(bottom = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {

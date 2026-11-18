@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -68,6 +70,8 @@ fun LargeTitleList(
     modifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     header: (@Composable () -> Unit)? = null,
+    /** Trailing controls pinned to the title's baseline (a settings gear, an avatar…). */
+    actions: (@Composable () -> Unit)? = null,
     titleBottom: androidx.compose.ui.unit.Dp = 12.dp,
     itemSpacing: Dp = 0.dp,
     content: LazyListScope.() -> Unit,
@@ -84,11 +88,21 @@ fun LargeTitleList(
             verticalArrangement = if (itemSpacing > 0.dp) Arrangement.spacedBy(itemSpacing) else Arrangement.Top,
         ) {
             item(key = "large-title") {
-                Box(
-                    Modifier.statusBarsPadding()
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.statusBarsPadding()
                         .padding(top = (62.dp - statusTop).coerceAtLeast(0.dp), start = 16.dp, end = 16.dp, bottom = titleBottom),
                 ) {
-                    Text(title, color = Tok.Label1, fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        title, color = Tok.Label1, fontSize = 34.sp, lineHeight = 41.sp,
+                        fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (actions != null) {
+                        Spacer(Modifier.weight(1f))
+                        actions()
+                    }
                 }
             }
             if (header != null) item(key = "header") { header() }

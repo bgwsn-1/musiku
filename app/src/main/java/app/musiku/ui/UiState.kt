@@ -29,6 +29,9 @@ class UiState {
     /** wired by AppRoot to NavController.navigate */
     var navigate: (String) -> Unit = {}
 
+    /** wired by AppRoot: asks GitHub now and raises the prompt (or a toast) with the answer. */
+    var checkUpdate: () -> Unit = {}
+
     fun openMenu(t: Track, onRemove: (() -> Unit)? = null, anchor: Rect? = null) {
         menuTrack = t
         menuRemove = onRemove
@@ -42,6 +45,7 @@ object Routes {
     const val Home = "home"
     const val Search = "search"
     const val Library = "library"
+    const val Settings = "settings"
     fun album(id: String) = "album/$id"
     fun artist(id: String) = "artist/$id"
     fun playlist(id: String) = "playlist/$id"
