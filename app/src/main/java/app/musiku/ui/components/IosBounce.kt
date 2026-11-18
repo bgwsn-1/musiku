@@ -71,6 +71,16 @@ private class BounceBand(
     /** True while the release spring is in flight. */
     private var springing = false
 
+    /**
+     * True from a release at the edge until its fling ends. The fling keeps pushing `SideEffect`
+     * deltas into [onPostScroll]; feeding those back into the band would re-stretch it and cancel
+     * the spring that just started — the "wait for the fling, then bounce" delay.
+     */
+    private var flingFromBand = false
+
+    /** Bumped whenever a settle is superseded, so a queued spring cannot run under a new touch. */
+    private var settleId = 0
+
     private fun show() {
         val value = sign(pull) * rubberBand(abs(pull), limit)
         scope.launch { offset.snapTo(value) }
@@ -81,22 +91,33 @@ private class BounceBand(
         show()
     }
 
-    /** Springs back to rest from wherever the band currently is. */
-    private fun settle() {
+    /**
+     * Springs back to rest from wherever the band currently is.
+     *
+     * [velocity] is the velocity the gesture was released with. Handing it to the spring means the
+     * band starts moving on the same frame instead of accelerating from a standstill, and a flick
+     * away from the edge carries a little further before turning around, the way iOS feels.
+     */
+    private fun settle(velocity: Float = 0f) {
         pull = 0f
         springing = true
+        val id = ++settleId
+        val launchVelocity = (velocity.coerceIn(-1500f, 1500f)) * FLING_TO_SPRING
         scope.launch {
+            if (id != settleId) return@launch
             try {
+                offset.stop()
                 offset.animateTo(
                     targetValue = 0f,
                     animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow,
+                        dampingRatio = 0.7f,
+                        stiffness = Spring.StiffnessMediumLow,
                     ),
+                    initialVelocity = launchVelocity,
                 )
             } finally {
                 // Cancelled by a new touch or by another settle: either way it is no longer running.
-                springing = false
+                if (id == settleId) springing = false
             }
         }
     }
@@ -111,6 +132,7 @@ private class BounceBand(
         // Walk the curve backwards so a resumed pull continues at the same resistance.
         pull = sign(value) * inverseRubberBand(abs(value), limit)
         springing = false
+        settleId++
         scope.launch { offset.stop() }
     }
 
@@ -119,7 +141,10 @@ private class BounceBand(
     val connection = object : NestedScrollConnection {
         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
             val delta = available.y
-            if (source == NestedScrollSource.UserInput) interrupt()
+            if (source == NestedScrollSource.UserInput) {
+                flingFromBand = false
+                interrupt()
+            }
             if (!relaxing(delta)) return Offset.Zero
             // Dragging back towards the edge: the band gives way one to one, and any travel left
             // over after it reaches the edge belongs to the list again.
@@ -141,6 +166,10 @@ private class BounceBand(
         ): Offset {
             val delta = available.y
             if (delta == 0f) return Offset.Zero
+            // After a release at the edge the fling keeps producing SideEffect deltas even though
+            // the list cannot move. Stretching the band with them would cancel the spring that
+            // just started on release, so the visible bounce would only begin once the fling ends.
+            if (source != NestedScrollSource.UserInput && flingFromBand) return Offset.Zero
             // The list hit its edge; whatever it could not scroll stretches the band. Consuming it
             // keeps the platform effect out of the drag.
             if (pull == 0f || (pull > 0f) == (delta > 0f)) pullBy(delta)
@@ -148,16 +177,19 @@ private class BounceBand(
         }
 
         override suspend fun onPreFling(available: Velocity): Velocity {
-            // The band springs back on its own; the list keeps the whole velocity, so a flick back
-            // into the content still flings normally and nothing is consumed twice.
-            if (pull != 0f) settle()
+            // Pointer up at the edge: start the spring right here, with the release velocity, before
+            // the fling has a chance to run. The list keeps the whole velocity, so a flick back into
+            // the content still flings normally and nothing is consumed twice.
+            flingFromBand = pull != 0f
+            if (pull != 0f) settle(available.y)
             return Velocity.Zero
         }
 
         override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-            // A fling that reached the edge stretched the band on the way out; put it back once the
-            // fling is done, exactly like a release does.
-            if (pull != 0f) settle()
+            // A fling that reached the edge from inside the content stretched the band on the way
+            // out; put it back now that the fling is done.
+            flingFromBand = false
+            if (pull != 0f) settle(available.y)
             return Velocity.Zero
         }
     }
@@ -177,6 +209,9 @@ private fun inverseRubberBand(offset: Float, limit: Float): Float {
 }
 
 private const val RubberBandCoefficient = 0.55f
+
+/** How much of the release velocity the spring takes over; the rest is an over-eager overshoot. */
+private const val FLING_TO_SPRING = 0.4f
 
 /** Upper bound on the tracked finger travel; the curve is already near its asymptote there. */
 private const val PullCap = 8f
