@@ -57,9 +57,9 @@ import app.musiku.ui.components.Eq
 import app.musiku.ui.components.GridCard
 import app.musiku.ui.components.LargeTitleList
 import app.musiku.ui.components.Load
+import app.musiku.ui.components.MusikuLoading
 import app.musiku.ui.components.SectionTitle
 import app.musiku.ui.components.Shelf
-import app.musiku.ui.components.Skeleton
 import app.musiku.ui.components.pressable
 import app.musiku.ui.components.Tappable
 import app.musiku.ui.components.rememberLoad
@@ -76,9 +76,8 @@ fun HomeScreen() {
     LargeTitleList("Beranda", titleBottom = 20.dp) {
         when (val l = load) {
             is Load.Loading -> item {
-                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Skeleton(Modifier.fillMaxWidth().aspectRatio(1.4f))
-                    repeat(3) { Skeleton(Modifier.fillMaxWidth().height(56.dp)) }
+                Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.72f), contentAlignment = Alignment.Center) {
+                    MusikuLoading()
                 }
             }
             is Load.Err -> item {
