@@ -85,7 +85,7 @@ fun Modifier.liquidGlass(
     /** Offset between the red and blue fringes. */
     aberration: Dp = 0.8.dp,
     /** Backdrop blur behind the body — the web's `frost`. */
-    frost: Dp = 24.dp,
+    frost: Dp = 18.dp,
     /** How much the edge compresses what is behind it. 1 = no zoom. */
     refraction: Float = 1f,
     shadow: Dp = 14.dp,
@@ -101,7 +101,7 @@ fun Modifier.liquidGlass(
     // all the tab bar ever looked like. Light mode needs a much stronger veil: white over a white
     // page vanishes, and there the bevel and the shadow have to carry the surface.
     val body = when {
-        canBlur -> Color.White.copy(alpha = if (dark) 0.18f else 0.55f)
+        canBlur -> Color.White.copy(alpha = if (dark) 0.26f else 0.55f)
         // No blur: a smoked panel that stays legible over album art, a shade above the window
         // colour so it never reads as black.
         dark -> Color(0xFF30303A).copy(alpha = 0.90f)
@@ -128,7 +128,11 @@ fun Modifier.liquidGlass(
     if (state != null && canBlur) {
         m = m.hazeChild(
             style = HazeStyle(
-                backgroundColor = Tok.GlassBase,
+                // Transparent, not Tok.GlassBase: Haze paints this opaque *under* the blur, so a
+                // black base turns the whole surface into a slab no matter how light the tint is.
+                // Where the page has nothing drawn, the window colour shows through instead — which
+                // is what the eye already sees around the bar.
+                backgroundColor = Color.Transparent,
                 tints = emptyList(),
                 blurRadius = frost,
                 noiseFactor = 0f,
