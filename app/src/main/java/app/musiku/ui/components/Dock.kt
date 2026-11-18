@@ -41,7 +41,6 @@ import app.musiku.ui.LocalApp
 import app.musiku.ui.Routes
 import app.musiku.ui.theme.LocalHazeState
 import app.musiku.ui.theme.Tok
-import app.musiku.ui.theme.glass
 import app.musiku.ui.theme.liquidGlass
 
 private val GlassShape = RoundedCornerShape(26.dp)
@@ -55,7 +54,7 @@ fun MiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val artScale by animateFloatAsState(if (ps.playing) 1f else 0.9f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow), label = "art")
     val haze = LocalHazeState.current
 
-    Box(modifier.fillMaxWidth().height(64.dp).glass(haze, GlassShape, shadow = 14.dp)) {
+    Box(modifier.fillMaxWidth().height(64.dp).liquidGlass(haze, GlassShape, shadow = 14.dp)) {
         Row(Modifier.fillMaxWidth().height(64.dp).padding(start = 10.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 Modifier.weight(1f).clip(CircleShape).tappable(onOpen, description = "Buka pemutar"),

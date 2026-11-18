@@ -58,8 +58,8 @@ import kotlin.math.max
  *  - **Frost** — the web blurs *after* refracting (`frost` px). Here Haze's backdrop blur is the
  *    frost, and it only covers the body: the band stays sharp, which is what makes the edge read as
  *    thick glass rather than a painted border.
- *  - **Tint** — `rgb(255 255 255 / 0.12)` becomes a vertical gradient, brighter along the lit top
- *    edge, painted over the whole surface.
+ *  - **Tint** — `rgb(255 255 255 / tint)` is the body: a white veil over the backdrop, plus a faint
+ *    vertical sheen that brightens the lit top edge.
  *  - **Chromatic aberration** — the web splits the displaced image into R/G/B passes at
  *    `scale ± aberration`. Without per-pixel displacement the split is approximated by pulling a red
  *    ring up-left and a blue ring down-right by [aberration] under the neutral rim, so only the
@@ -90,7 +90,12 @@ fun Modifier.liquidGlass(
     shadow: Dp = 14.dp,
 ): Modifier {
     val dark = isSystemInDarkTheme()
-    val fill = Tok.GlassFill
+    // The web body is `rgb(255 255 255 / tint)` — a white veil over the refracted backdrop, never a
+    // dark scrim. Tok.GlassFill (56% near-black) is right for sheets that have to hide what is
+    // behind them, but over this app's near-black window it just reads as a black slab, which is
+    // all the tab bar ever looked like. Light mode needs a much stronger veil: white over a white
+    // page vanishes, and there the bevel and the shadow have to carry the surface.
+    val veil = Color.White.copy(alpha = if (dark) 0.18f else 0.55f)
     val topLight = Color.White.copy(alpha = if (dark) 0.62f else 0.85f)
     val midLight = Color.White.copy(alpha = if (dark) 0.10f else 0.22f)
     val bottomShade = Color.Black.copy(alpha = if (dark) 0.40f else 0.14f)
@@ -125,7 +130,7 @@ fun Modifier.liquidGlass(
             origin = it.positionInWindow()
             positioned = true
         }
-        .background(fill)
+        .background(veil)
         .drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
             val rimPx = bevelDepth.toPx()
@@ -134,9 +139,9 @@ fun Modifier.liquidGlass(
             val band = bandPath(outline, rimPx)
 
             val body = Brush.verticalGradient(
-                0f to Color.White.copy(alpha = tint * 0.85f),
-                0.42f to Color.White.copy(alpha = tint * 0.10f),
-                1f to Color.White.copy(alpha = tint * 0.40f),
+                0f to Color.White.copy(alpha = tint * 0.55f),
+                0.45f to Color.White.copy(alpha = 0f),
+                1f to Color.White.copy(alpha = tint * 0.25f),
             )
             val rim = Brush.verticalGradient(
                 0f to topLight,
@@ -166,6 +171,10 @@ fun Modifier.liquidGlass(
                             drawLayer(layer)
                         }
                     }
+                    // The web's filter ends with brightness(1.02) + a specular channel, so the rim
+                    // sits a touch lighter than the body. Without a shader the cheapest honest
+                    // version is a faint white coat on the band alone.
+                    drawPath(band, Color.White.copy(alpha = 0.05f))
                 }
                 // 2. Body tint over the whole surface, band included.
                 drawOutline(outline, body)
