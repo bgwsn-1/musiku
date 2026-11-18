@@ -22,8 +22,8 @@ android {
         applicationId = "app.musiku"
         minSdk = 31 // Android 12: RenderEffect blur available everywhere we target
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.6"
+        versionCode = 7
+        versionName = "0.7"
     }
 
     signingConfigs {

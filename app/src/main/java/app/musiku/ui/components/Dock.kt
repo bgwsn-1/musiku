@@ -42,6 +42,7 @@ import app.musiku.ui.Routes
 import app.musiku.ui.theme.LocalHazeState
 import app.musiku.ui.theme.Tok
 import app.musiku.ui.theme.glass
+import app.musiku.ui.theme.liquidGlass
 
 private val GlassShape = RoundedCornerShape(26.dp)
 
@@ -96,7 +97,7 @@ fun BottomTabs(selected: String?, onSelect: (String) -> Unit, modifier: Modifier
     // not a per-item fill — so the highlight travels when you switch tabs.
     val idx = Tabs.indexOfFirst { it.route == selected }.coerceAtLeast(0)
     BoxWithConstraints(
-        modifier.fillMaxWidth().height(60.dp).glass(haze, CircleShape, shadow = 14.dp).padding(6.dp),
+        modifier.fillMaxWidth().height(60.dp).liquidGlass(haze, CircleShape, shadow = 14.dp).padding(6.dp),
     ) {
         val gap = 4.dp
         val itemW = (maxWidth - gap * (Tabs.size - 1)) / Tabs.size
