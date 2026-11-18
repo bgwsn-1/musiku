@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -54,6 +55,7 @@ import app.musiku.ui.components.SectionTitle
 import app.musiku.ui.components.Skeleton
 import app.musiku.ui.components.pressable
 import app.musiku.ui.components.TrackRow
+import app.musiku.ui.components.rememberLiquidMetal
 import app.musiku.ui.components.rememberLoad
 import app.musiku.ui.theme.Tok
 import kotlinx.coroutines.delay
@@ -83,28 +85,43 @@ fun SearchScreen() {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Text("Cari", color = Tok.Label1, fontSize = 28.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.73).sp,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 64.dp, bottom = 20.dp))
-        Row(
-            Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(48.dp).clip(CircleShape).background(Tok.Fill1).padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        val metal = rememberLiquidMetal(masked = false)
+        Box(
+            Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(CircleShape)
+                .drawBehind { metal.paint(this) },
         ) {
-            Icon(MIcons.Search, null, tint = Tok.Label3, modifier = Modifier.size(20.dp))
-            Box(Modifier.weight(1f)) {
-                if (input.isEmpty()) Text("Lagu, artis, album…", color = Tok.Label3, fontSize = 17.sp)
-                BasicTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    singleLine = true,
-                    textStyle = TextStyle(color = Tok.Label1, fontSize = 17.sp),
-                    cursorBrush = SolidColor(Tok.Accent),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { query = input.trim(); focus.clearFocus() }),
-                    modifier = Modifier.fillMaxWidth().focusRequester(requester),
-                )
-            }
-            if (input.isNotEmpty()) {
-                Box(Modifier.size(24.dp).clip(CircleShape).pressable { input = ""; query = "" }, contentAlignment = Alignment.Center) {
-                    Icon(MIcons.Close, "Hapus", tint = Tok.Label3, modifier = Modifier.size(18.dp))
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .padding(2.dp)
+                    .clip(CircleShape)
+                    .background(Tok.Surface)
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(MIcons.Search, null, tint = Tok.Label3, modifier = Modifier.size(20.dp))
+                Box(Modifier.weight(1f)) {
+                    if (input.isEmpty()) Text("Lagu, artis, album…", color = Tok.Label3, fontSize = 17.sp)
+                    BasicTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        singleLine = true,
+                        textStyle = TextStyle(color = Tok.Label1, fontSize = 17.sp),
+                        cursorBrush = SolidColor(Tok.Accent),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { query = input.trim(); focus.clearFocus() }),
+                        modifier = Modifier.fillMaxWidth().focusRequester(requester),
+                    )
+                }
+                if (input.isNotEmpty()) {
+                    Box(Modifier.size(24.dp).clip(CircleShape).pressable { input = ""; query = "" }, contentAlignment = Alignment.Center) {
+                        Icon(MIcons.Close, "Hapus", tint = Tok.Label3, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
         }

@@ -245,6 +245,7 @@ fun NowPlayingScreen(
                     modifier = Modifier.padding(top = 6.dp),
                     commitOnRelease = true,
                     enabled = dur > 0f,
+                    metalFill = true,
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     val small = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Ink.Label2)

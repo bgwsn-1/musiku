@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 /**
  * Thick pill-shaped slider used for both the progress bar (12 dp, grows while
  * dragging, commits on release) and the volume bar (6 dp, live).
+ *
+ * [metalFill] swaps the flat fill for the liquid-metal surface, clipped to the filled portion.
  */
 @Composable
 fun PillSlider(
@@ -36,7 +38,9 @@ fun PillSlider(
     enabled: Boolean = true,
     trackColor: Color = Color.White.copy(alpha = 0.40f),
     fillColor: Color = Color.White,
+    metalFill: Boolean = false,
 ) {
+    val liquid = if (metalFill) rememberLiquidMetal(speed = 0.5f, scale = 24f, masked = false, lift = 0.25f) else null
     var drag by remember { mutableStateOf<Float?>(null) }
     val shown = (drag ?: fraction).coerceIn(0f, 1f)
     val h by animateDpAsState(
@@ -81,12 +85,16 @@ fun PillSlider(
             cornerRadius = radius,
         )
         if (shown > 0f) {
-            drawRoundRect(
-                color = fillColor,
-                topLeft = Offset(0f, top),
-                size = Size(size.width * shown, barH),
-                cornerRadius = radius,
-            )
+            if (liquid != null) {
+                liquid.paintRounded(this, Offset(0f, top), Size(size.width * shown, barH), radius)
+            } else {
+                drawRoundRect(
+                    color = fillColor,
+                    topLeft = Offset(0f, top),
+                    size = Size(size.width * shown, barH),
+                    cornerRadius = radius,
+                )
+            }
         }
     }
 }
