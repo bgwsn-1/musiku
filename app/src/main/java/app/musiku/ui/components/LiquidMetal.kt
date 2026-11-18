@@ -32,16 +32,16 @@ import kotlin.math.sin
  */
 internal class LiquidMetal(
     private val clock: () -> Float,
-    private val shader: RuntimeShader?,
-    private val brush: ShaderBrush?,
+    private val surface: MetalSurface?,
     private val scale: Float = 8f,
     private val masked: Boolean = true,
     private val lift: Float = 0f,
 ) {
     /** Fills the whole draw bounds. */
     fun paint(scope: DrawScope) {
-        if (runtimeShaderUsable(shader, brush)) {
-            paintShader(scope, shader!!, brush!!, clock())
+        val program = surface
+        if (program != null) {
+            program.paint(scope, clock(), scale, masked, lift)
         } else {
             scope.drawRect(fallbackMetal(clock()))
         }
@@ -58,13 +58,26 @@ internal class LiquidMetal(
         }
         scope.clipPath(clip) { paint(this) }
     }
+}
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private fun paintShader(scope: DrawScope, shader: RuntimeShader, brush: ShaderBrush, time: Float) {
+/**
+ * Keeps `RuntimeShader` out of every signature reachable on API 31/32: the class only exists from
+ * Android 13, and a verifier that trips over it would fail before the fallback ever draws.
+ */
+internal interface MetalSurface {
+    fun paint(scope: DrawScope, time: Float, scale: Float, masked: Boolean, lift: Float)
+}
+
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private class AgslSurface(shader: RuntimeShader) : MetalSurface {
+    private val shader = shader
+    private val brush = ShaderBrush(shader)
+
+    override fun paint(scope: DrawScope, time: Float, scale: Float, masked: Boolean, lift: Float) {
+        // Every uniform has to be written explicitly: RuntimeShader starts them all at 0, and
+        // u_scale = 0 would divide the UVs to infinity.
         shader.setFloatUniform("u_resolution", scope.size.width, scope.size.height)
         shader.setFloatUniform("u_time", time)
-        // Every other uniform has to be written explicitly: RuntimeShader starts them all at 0,
-        // and u_scale = 0 would divide the UVs to infinity.
         shader.setFloatUniform("u_repetition", 4f)
         shader.setFloatUniform("u_softness", 0.5f)
         shader.setFloatUniform("u_shiftRed", 0.3f)
@@ -81,17 +94,12 @@ internal class LiquidMetal(
     }
 }
 
-private fun runtimeShaderUsable(
-    shader: RuntimeShader?,
-    brush: ShaderBrush?,
-): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && shader != null && brush != null
-
 /** One compiled program shared by every surface; uniforms are rewritten before each draw. */
-private val sharedShader: RuntimeShader? by lazy {
+private val sharedSurface: MetalSurface? by lazy {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         // A shader that fails to compile throws here rather than at draw time, which is the only
         // place the failure can be caught without patching the dispatcher.
-        runCatching { RuntimeShader(LIQUID_METAL_AGSL) }.getOrNull()
+        runCatching { AgslSurface(RuntimeShader(LIQUID_METAL_AGSL)) }.getOrNull()
     } else {
         null
     }
@@ -116,11 +124,10 @@ internal fun rememberLiquidMetal(
         }
     }
 
-    val shader = remember { sharedShader }
-    val brush = remember(shader) { shader?.let { ShaderBrush(it) } }
+    val surface = remember { sharedSurface }
 
-    return remember(shader, brush, scale, masked, lift) {
-        LiquidMetal({ clock.floatValue }, shader, brush, scale, masked, lift)
+    return remember(surface, scale, masked, lift) {
+        LiquidMetal({ clock.floatValue }, surface, scale, masked, lift)
     }
 }
 
