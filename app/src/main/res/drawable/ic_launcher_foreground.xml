@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Intentionally empty. The launcher artwork is a full-bleed photograph, so it lives in the
-     background layer and there is nothing to draw on top. The element still has to exist
-     because <adaptive-icon> expects both layers. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108" />
