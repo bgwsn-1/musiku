@@ -59,7 +59,6 @@ import app.musiku.MusikuApp
 import app.musiku.ui.components.AddToPlaylistSheet
 import app.musiku.ui.components.AppleBackdrop
 import app.musiku.ui.components.BottomTabs
-import app.musiku.ui.components.DockSearch
 import app.musiku.ui.components.InfoDialog
 import app.musiku.ui.components.MiniPlayer
 import app.musiku.ui.components.TrackMenuSheet
@@ -143,13 +142,12 @@ fun AppRoot(app: MusikuApp) {
                     }
                 }
 
-                // floating dock: mini player (or search field when idle) + tab bar
+                // floating dock: mini player (when something is queued) + tab bar
                 Column(
                     Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 12.dp).padding(bottom = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (ps.current != null) MiniPlayer(onOpen = { ui.nowPlayingOpen = true })
-                    else if (route != Routes.Search) DockSearch(onClick = { selectTab(nav, Routes.Search) })
                     BottomTabs(
                         selected = when {
                             route in TabRoutes -> route

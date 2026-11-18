@@ -80,19 +80,6 @@ fun MiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
-/** Shown instead of the mini player while nothing is queued (same spot as the web's dock search). */
-@Composable
-fun DockSearch(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val haze = LocalHazeState.current
-    Row(
-        modifier.fillMaxWidth().height(64.dp).glass(haze, CircleShape, shadow = 14.dp).tappable(onClick, description = "Cari").padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Icon(MIcons.Search, null, tint = Tok.Label3, modifier = Modifier.size(20.dp))
-        Text("Cari lagu, artis, album…", color = Tok.Label3, fontSize = 16.sp)
-    }
-}
-
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
 private val Tabs = listOf(
