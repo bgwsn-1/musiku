@@ -137,7 +137,7 @@ fun SearchScreen() {
             return@Column
         }
 
-        Box(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp).horizontalScroll(rememberScrollState())) {
+        Box(Modifier.padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 32.dp).horizontalScroll(rememberScrollState())) {
             Segmented(TABS, tab, { tab = it })
         }
 
