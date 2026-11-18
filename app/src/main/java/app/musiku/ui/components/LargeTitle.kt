@@ -115,13 +115,13 @@ fun LargeTitleList(
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        0f to Tok.Window.copy(alpha = 0.85f),
-                        0.55f to Tok.Window.copy(alpha = 0.40f),
+                        0f to Tok.Window.copy(alpha = 0.88f),
+                        0.6f to Tok.Window.copy(alpha = 0.30f),
                         1f to Color.Transparent,
                     ),
                 )
                 .statusBarsPadding()
-                .height(76.dp),
+                .height(52.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(

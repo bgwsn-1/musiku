@@ -40,7 +40,6 @@ import app.musiku.ui.components.Artwork
 import app.musiku.ui.components.EmptyState
 import app.musiku.ui.components.GridCard
 import app.musiku.ui.components.LargeTitleList
-import app.musiku.ui.components.ProfileButton
 import app.musiku.ui.components.Segmented
 import app.musiku.ui.components.Tappable
 import app.musiku.ui.components.TextPromptDialog
@@ -78,7 +77,6 @@ fun LibraryScreen() {
 
     LargeTitleList(
         "Pustaka",
-        actions = { ProfileButton(onClick = { ui.navigate(Routes.Settings) }) },
         header = {
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
                 Text(
