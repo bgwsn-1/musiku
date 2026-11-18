@@ -67,6 +67,7 @@ import app.musiku.ui.components.EmptyState
 import app.musiku.ui.components.LargeTitleList
 import app.musiku.ui.components.Load
 import app.musiku.ui.components.MusikuLoading
+import app.musiku.ui.components.ProfileButton
 import app.musiku.ui.components.Tappable
 import app.musiku.ui.components.pressable
 import app.musiku.ui.components.rememberLoad
@@ -110,6 +111,9 @@ fun HomeScreen() {
         "Beranda",
         titleBottom = 4.dp,
         itemSpacing = HomeItemSpacing,
+        // Convx keeps the account avatar at the right end of the bar; here it is the way
+        // into Settings.
+        actions = { ProfileButton(onClick = { ui.navigate(Routes.Settings) }) },
     ) {
         when (val l = load) {
             is Load.Loading -> item(key = "loading") {

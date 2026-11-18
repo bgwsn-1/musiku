@@ -40,6 +40,7 @@ import app.musiku.ui.components.Artwork
 import app.musiku.ui.components.EmptyState
 import app.musiku.ui.components.GridCard
 import app.musiku.ui.components.LargeTitleList
+import app.musiku.ui.components.ProfileButton
 import app.musiku.ui.components.Segmented
 import app.musiku.ui.components.Tappable
 import app.musiku.ui.components.TextPromptDialog
@@ -77,16 +78,7 @@ fun LibraryScreen() {
 
     LargeTitleList(
         "Pustaka",
-        actions = {
-            Box(
-                Modifier.size(40.dp).clip(CircleShape).pressable(description = "Pengaturan") {
-                    ui.navigate(Routes.Settings)
-                },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(MIcons.Settings, "Pengaturan", tint = Tok.Label2, modifier = Modifier.size(22.dp))
-            }
-        },
+        actions = { ProfileButton(onClick = { ui.navigate(Routes.Settings) }) },
         header = {
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
                 Text(

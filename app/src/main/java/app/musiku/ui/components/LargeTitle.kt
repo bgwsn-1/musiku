@@ -137,6 +137,19 @@ fun LargeTitleList(
                     .alpha(bar)
                     .graphicsLayer { translationY = (1f - bar) * 8.dp.toPx() },
             )
+            // Trailing controls ride the collapsed bar too, so the avatar stays put once
+            // the large title has scrolled away.
+            if (actions != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 16.dp)
+                        .alpha(bar),
+                ) {
+                    actions()
+                }
+            }
         }
     }
 }
