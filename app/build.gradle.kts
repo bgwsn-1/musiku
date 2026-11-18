@@ -20,10 +20,14 @@ android {
 
     defaultConfig {
         applicationId = "app.musiku"
-        minSdk = 31 // Android 12: RenderEffect blur available everywhere we target
+        // Android 7.0. The app has three capability tiers, decided at runtime:
+        //   33+ AGSL liquid metal + real blur, 31-32 gradient metal + blur, <31 gradient metal +
+        //   frosted fills (Haze falls back to a scrim, so the glass surfaces stop being see-through).
+        // NewPipeExtractor uses java.time, which is why desugaring is on below.
+        minSdk = 24
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.8"
+        versionCode = 9
+        versionName = "0.9"
     }
 
     signingConfigs {
@@ -46,6 +50,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // java.time exists from API 26 and NewPipeExtractor uses it, so the desugared copy has to
+        // ship for API 24/25.
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
@@ -93,4 +100,6 @@ dependencies {
     // v0.24.6 dies with "The page needs to be reloaded." — YouTube changed the
     // player response. v0.27.1 resolves audio streams again (verified on JVM).
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 }

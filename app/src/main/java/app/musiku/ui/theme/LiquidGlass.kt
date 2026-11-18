@@ -1,5 +1,6 @@
 package app.musiku.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
@@ -90,12 +91,22 @@ fun Modifier.liquidGlass(
     shadow: Dp = 14.dp,
 ): Modifier {
     val dark = isSystemInDarkTheme()
+    // Real backdrop blur lands in Android 12 (RenderEffect), so below that every glass surface has
+    // to be a frosted fill instead: something has to sit between the labels and whatever scrolls
+    // behind them.
+    val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     // The web body is `rgb(255 255 255 / tint)` — a white veil over the refracted backdrop, never a
     // dark scrim. Tok.GlassFill (56% near-black) is right for sheets that have to hide what is
     // behind them, but over this app's near-black window it just reads as a black slab, which is
     // all the tab bar ever looked like. Light mode needs a much stronger veil: white over a white
     // page vanishes, and there the bevel and the shadow have to carry the surface.
-    val veil = Color.White.copy(alpha = if (dark) 0.18f else 0.55f)
+    val body = when {
+        canBlur -> Color.White.copy(alpha = if (dark) 0.18f else 0.55f)
+        // No blur: a smoked panel that stays legible over album art, a shade above the window
+        // colour so it never reads as black.
+        dark -> Color(0xFF30303A).copy(alpha = 0.90f)
+        else -> Color(0xFFF7F7FA).copy(alpha = 0.92f)
+    }
     val topLight = Color.White.copy(alpha = if (dark) 0.62f else 0.85f)
     val midLight = Color.White.copy(alpha = if (dark) 0.10f else 0.22f)
     val bottomShade = Color.Black.copy(alpha = if (dark) 0.40f else 0.14f)
@@ -114,7 +125,7 @@ fun Modifier.liquidGlass(
         m = m.shadow(shadow, shape, clip = false, ambientColor = Tok.Shadow, spotColor = Tok.Shadow)
     }
     m = m.clip(shape)
-    if (state != null) {
+    if (state != null && canBlur) {
         m = m.hazeChild(
             style = HazeStyle(
                 backgroundColor = Tok.GlassBase,
@@ -130,7 +141,7 @@ fun Modifier.liquidGlass(
             origin = it.positionInWindow()
             positioned = true
         }
-        .background(veil)
+        .background(body)
         .drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
             val rimPx = bevelDepth.toPx()
@@ -158,7 +169,9 @@ fun Modifier.liquidGlass(
                 // 1. The rim shows the captured backdrop sharp, where the body only shows its
                 //    blurred copy. That contrast is what reads as a thick, bent edge.
                 val layer = state?.contentLayer
-                if (band != null && layer != null && positioned) {
+                // Without blur the body is a frosted fill, so a clear band would look like a
+                // window punched through it. The band only makes sense when the interior is blurred.
+                if (canBlur && band != null && layer != null && positioned) {
                     val delta = state.positionOnScreen - origin
                     clipPath(band) {
                         // A zoom below 1 pulls the world outside the edge into the band, but a
