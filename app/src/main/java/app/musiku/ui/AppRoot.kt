@@ -98,6 +98,7 @@ import app.musiku.ui.screens.activeLyricIndex
 import app.musiku.ui.screens.rememberLyrics
 import app.musiku.ui.theme.LocalGlassBackdrop
 import app.musiku.ui.theme.LocalHazeState
+import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.Tok
 import app.musiku.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import app.musiku.ui.glass.backdrop.backdrops.layerBackdrop
@@ -107,7 +108,7 @@ import kotlinx.coroutines.launch
 private val TabRoutes = setOf(Routes.Home, Routes.Search, Routes.Library)
 
 @Composable
-fun AppRoot(app: MusikuApp) {
+fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
     val ui = remember { UiState() }
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
@@ -203,6 +204,7 @@ fun AppRoot(app: MusikuApp) {
         LocalApp provides app,
         LocalUi provides ui,
         LocalDensity provides Density(density.density, fontScale = 1f),
+        LocalLowDevice provides lowDevice,
     ) {
         // Liquid glass: the page content is drawn into one layer that every floating glass surface
         // (dock, tab bar, mini player) blurs behind itself — the Compose equivalent of the web's
@@ -212,13 +214,16 @@ fun AppRoot(app: MusikuApp) {
         // surface samples that layer (blur + AGSL lens) instead of approximating a backdrop.
         val glassBackdrop = rememberLayerBackdrop()
         Box(Modifier.fillMaxSize().background(Tok.Window)) {
-            CompositionLocalProvider(LocalHazeState provides hazeState, LocalGlassBackdrop provides glassBackdrop) {
+            CompositionLocalProvider(
+                LocalHazeState provides if (lowDevice) null else hazeState,
+                LocalGlassBackdrop provides if (lowDevice) null else glassBackdrop,
+            ) {
                 Box(
                     Modifier
                         .fillMaxSize()
                         .nestedScroll(dockScroll)
-                        .layerBackdrop(glassBackdrop)
-                        .haze(hazeState),
+                        // Low-device mode records no backdrop at all — glass surfaces go flat.
+                        .then(if (lowDevice) Modifier else Modifier.layerBackdrop(glassBackdrop).haze(hazeState)),
                 ) {
                     NavHost(
                         navController = nav,

@@ -10,7 +10,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,6 +54,7 @@ import app.musiku.ui.nowplaying.Sep
 import app.musiku.ui.shareTrack
 import app.musiku.ui.theme.MIcons
 import app.musiku.ui.theme.MMenuIcons
+import app.musiku.ui.theme.Tok
 import app.musiku.ui.theme.glass
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
@@ -88,7 +88,7 @@ fun TrackMenu(
     val liked by app.library.liked.collectAsState()
     val isLiked = liked.any { it.videoId == track.videoId }
     val isCurrent = state.current?.videoId == track.videoId
-    val dark = isSystemInDarkTheme()
+    val dark = Tok.IsDark
     val shape = RoundedCornerShape(28.dp)
 
     // `visible` stays true until the exit finishes, so the card can play its landing.

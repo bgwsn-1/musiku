@@ -46,6 +46,9 @@ private fun parseTracks(raw: String?): List<Track> {
     }.getOrDefault(emptyList())
 }
 
+/** Theme choice persisted alongside the other app preferences. */
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 /**
  * Everything the web build keeps in localStorage: favourites, playlists, recents and the
  * player settings. Held in memory as StateFlows, mirrored to DataStore on every change.
@@ -61,6 +64,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kRepeat = intPreferencesKey("repeat")
     private val kSpotifyMatches = stringPreferencesKey("spotifyMatches")
     private val kBookmarkedArtists = stringPreferencesKey("bookmarkedArtists")
+    private val kThemeMode = stringPreferencesKey("themeMode")
+    private val kLowDevice = booleanPreferencesKey("lowDevice")
 
     private val _liked = MutableStateFlow<List<Track>>(emptyList())
     private val _bookmarkedArtists = MutableStateFlow<Set<String>>(emptySet())
@@ -71,6 +76,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val _autoplay = MutableStateFlow(true)
     private val _shuffle = MutableStateFlow(false)
     private val _repeat = MutableStateFlow(0)
+    private val _themeMode = MutableStateFlow(ThemeMode.SYSTEM)
+    private val _lowDevice = MutableStateFlow(false)
 
     /** Spotify track URI → the YouTube Music track it was matched to, so syncs skip old work. */
     private val spotifyCache = java.util.concurrent.ConcurrentHashMap<String, Track>()
@@ -85,6 +92,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     val autoplay: StateFlow<Boolean> = _autoplay
     val shuffle: StateFlow<Boolean> = _shuffle
     val repeat: StateFlow<Int> = _repeat
+    val themeMode: StateFlow<ThemeMode> = _themeMode
+    val lowDevice: StateFlow<Boolean> = _lowDevice
 
     @Volatile var loaded = false
         private set
@@ -123,6 +132,9 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             _autoplay.value = p[kAutoplay] ?: true
             _shuffle.value = p[kShuffle] ?: false
             _repeat.value = (p[kRepeat] ?: 0).coerceIn(0, 2)
+            _themeMode.value = runCatching { ThemeMode.valueOf(p[kThemeMode] ?: "SYSTEM") }
+                .getOrDefault(ThemeMode.SYSTEM)
+            _lowDevice.value = p[kLowDevice] ?: false
             loaded = true
             ready.complete(Unit)
         }
@@ -251,6 +263,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     fun setAutoplay(on: Boolean) { _autoplay.value = on; save { it[kAutoplay] = on } }
     fun setShuffle(on: Boolean) { _shuffle.value = on; save { it[kShuffle] = on } }
     fun setRepeat(mode: Int) { _repeat.value = mode; save { it[kRepeat] = mode } }
+    fun setThemeMode(mode: ThemeMode) { _themeMode.value = mode; save { it[kThemeMode] = mode.name } }
+    fun setLowDevice(on: Boolean) { _lowDevice.value = on; save { it[kLowDevice] = on } }
 
     companion object {
         const val DEFAULT_CF_SEC = 4

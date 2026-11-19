@@ -1,7 +1,6 @@
 package app.musiku.ui.theme
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -61,11 +60,11 @@ val LocalGlassBackdrop = staticCompositionLocalOf<LayerBackdrop?> { null }
 fun Modifier.liquidGlass(
     shape: CornerBasedShape,
     /** Specular rim opacity. Convx ships 0.30 in dark, 0.40 in light. */
-    highlightAlpha: Float = if (isSystemInDarkTheme()) 0.30f else 0.40f,
+    highlightAlpha: Float = if (Tok.IsDark) 0.30f else 0.40f,
     /** Overrides the neutral surface tint (light mode only by default). */
     tint: Color? = null,
 ): Modifier {
-    val dark = isSystemInDarkTheme()
+    val dark = Tok.IsDark
     val backdrop = LocalGlassBackdrop.current
 
     // GlassTintTokens: dark is a white lift, light is a slightly darker veil.
@@ -73,8 +72,8 @@ fun Modifier.liquidGlass(
     val baseAlpha = if (dark) 0.15f else 0.40f
     val neutralTint = tint ?: if (dark) Color.Transparent else Color(0xFF3C3C43).copy(alpha = 0.05f)
 
-    // API 31 has no shader inputs and no capture for us: a readable smoked panel instead.
-    if (backdrop == null || !isRenderEffectSupported()) {
+    // Low-device mode opts out of every captured/lens pass; API 31 falls back here too.
+    if (LocalLowDevice.current || backdrop == null || !isRenderEffectSupported()) {
         return clip(shape)
             .background(base.copy(alpha = baseAlpha))
             .then(

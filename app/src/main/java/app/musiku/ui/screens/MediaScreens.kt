@@ -93,6 +93,7 @@ import app.musiku.ui.components.rememberHeroZoom
 import app.musiku.ui.components.rememberArtistArtworkBg
 import app.musiku.ui.components.rememberLoad
 import app.musiku.ui.components.rememberPlaylistAppearance
+import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.SfDetailIcons
 import app.musiku.ui.theme.Tok
 import kotlinx.coroutines.launch
@@ -100,8 +101,9 @@ import kotlinx.coroutines.launch
 /** Art-tinted backdrop kept for the album page (not yet ported to the Convx collection header). */
 @Composable
 private fun Backdrop(img: String?, modifier: Modifier = Modifier) {
+    val lowDevice = LocalLowDevice.current
     Box(modifier.fillMaxWidth().height(440.dp)) {
-        Box(Modifier.fillMaxSize().blur(64.dp).alpha(0.5f)) {
+        Box(Modifier.fillMaxSize().then(if (lowDevice) Modifier else Modifier.blur(64.dp)).alpha(0.5f)) {
             Artwork(img, Modifier.fillMaxSize().graphicsLayer { scaleX = 1.5f; scaleY = 1.5f })
         }
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, 0.25f to Color.Transparent, 1f to Tok.Window)))

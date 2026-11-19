@@ -22,6 +22,9 @@ import dev.chrisbanes.haze.hazeChild
  */
 val LocalHazeState = compositionLocalOf<HazeState?> { null }
 
+/** Low-device mode: skip every backdrop blur and fall back to flat glass fills. */
+val LocalLowDevice = compositionLocalOf { false }
+
 /**
  * Liquid glass, the Musiku signature: a real backdrop blur (`RenderEffect`) under a translucent
  * fill, with the web's two edge highlights on top.
@@ -56,7 +59,7 @@ fun Modifier.glass(
     // Order matters: the clip must wrap hazeChild so the blurred backdrop is rounded, and the fill
     // + edges must come after it so they paint on top of the blur (web: backdrop-filter then bg).
     m = m.clip(shape)
-    if (state != null) {
+    if (state != null && !LocalLowDevice.current) {
         m = m.hazeChild(
             style = HazeStyle(
                 // Drawn *behind* the blur; the translucent fill above is what the eye reads.

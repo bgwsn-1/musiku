@@ -1,5 +1,6 @@
 package app.musiku.ui.screens
 
+import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.MIcons
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -219,6 +220,7 @@ fun SearchScreen() {
  */
 @Composable
 private fun HeroBackdrop(url: String) {
+    val lowDevice = LocalLowDevice.current
     AsyncImage(
         model = url,
         contentDescription = null,
@@ -226,7 +228,7 @@ private fun HeroBackdrop(url: String) {
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .blur(120.dp)
+            .then(if (lowDevice) Modifier else Modifier.blur(120.dp))
             .graphicsLayer { alpha = 0.55f },
     )
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))

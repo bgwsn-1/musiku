@@ -71,6 +71,7 @@ import app.musiku.ui.components.ProfileButton
 import app.musiku.ui.components.Tappable
 import app.musiku.ui.components.pressable
 import app.musiku.ui.components.rememberLoad
+import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.MIcons
 import app.musiku.ui.theme.Tok
 import coil.compose.AsyncImage
@@ -340,6 +341,7 @@ private fun HomeHeroCard(entry: HomeEntry) {
 
 @Composable
 private fun BoxScope.HeroFooter(entry: HomeEntry) {
+    val lowDevice = LocalLowDevice.current
     Box(
         Modifier
             .align(Alignment.BottomStart)
@@ -349,7 +351,7 @@ private fun BoxScope.HeroFooter(entry: HomeEntry) {
         if (entry.img != null) {
             // The same cover, softened into a colour field. Scaling past the band keeps the
             // blur from eating its own edges the way a plain Gaussian pass would.
-            Box(Modifier.fillMaxSize().blur(20.dp)) {
+            Box(Modifier.fillMaxSize().then(if (lowDevice) Modifier else Modifier.blur(20.dp))) {
                 AsyncImage(
                     model = entry.img,
                     contentDescription = null,

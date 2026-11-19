@@ -104,6 +104,7 @@ import app.musiku.model.RepeatMode
 import app.musiku.model.Track
 import app.musiku.R
 import app.musiku.ui.components.Artwork
+import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.MIcons
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
@@ -139,6 +140,7 @@ fun NowPlayingScreen(
     // The player ships its own field, so its menu samples *that* — PlayerMenu is a glass panel
     // over the player, not over the page behind it.
     val haze = remember { HazeState() }
+    val lowDevice = LocalLowDevice.current
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // Convx keeps the tab row 31dp off the screen edge, inset included.
     val bottomBarPad = (31.dp - navBottom).coerceAtLeast(4.dp)
@@ -146,7 +148,7 @@ fun NowPlayingScreen(
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().haze(haze)) {
+        Box(Modifier.fillMaxSize().then(if (lowDevice) Modifier else Modifier.haze(haze))) {
             // Convx's default GRADIENT field: the sleeve's top/bottom edge colours, no image on screen.
             // The black under it fades with the field so the card can hand off to the pill.
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = backgroundAlpha() }) {

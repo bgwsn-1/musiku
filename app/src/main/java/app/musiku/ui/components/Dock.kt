@@ -10,7 +10,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -81,6 +80,7 @@ import app.musiku.ui.nowplaying.LandingSpread
 import app.musiku.ui.nowplaying.MiniPlayerCornerRadius
 import app.musiku.ui.nowplaying.PlayerMorph
 import app.musiku.ui.theme.LocalGlassBackdrop
+import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.Tok
 import app.musiku.ui.theme.liquidGlass
 import kotlinx.coroutines.flow.collectLatest
@@ -405,7 +405,8 @@ fun MorphDock(
     val app = LocalApp.current
     val ps by app.player.ui.collectAsState()
     val hasPlayer = ps.current != null
-    val dark = isSystemInDarkTheme()
+    val dark = Tok.IsDark
+    val lowDevice = LocalLowDevice.current
     val appBackdrop = LocalGlassBackdrop.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -580,7 +581,7 @@ fun MorphDock(
         Box(
             Modifier
                 .fillMaxSize()
-                .then(if (pressed) Modifier.layerBackdrop(barBackdrop) else Modifier),
+                .then(if (pressed && !lowDevice) Modifier.layerBackdrop(barBackdrop) else Modifier),
         ) {
             // Expanded tabs live inside the pill that shrinks into the left circle.
             Box(
@@ -678,7 +679,7 @@ fun MorphDock(
                 .then(if (inline) Modifier else interactiveHighlight.gestureModifier)
                 .then(if (inline) Modifier else drag.modifier)
                 .then(
-                    if (pressed && lensBackdrop != null && isRenderEffectSupported()) {
+                    if (pressed && !lowDevice && lensBackdrop != null && isRenderEffectSupported()) {
                         Modifier.drawBackdrop(
                             backdrop = lensBackdrop,
                             // The bar's own shape family: puck and bar concentric.

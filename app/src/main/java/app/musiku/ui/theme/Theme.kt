@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import app.musiku.R
+import app.musiku.data.ThemeMode
 
 /** Convx's Latin typeface: the same four SF Pro Text weights it ships. */
 val SfPro = FontFamily(
@@ -132,12 +133,16 @@ val DarkColors = MusikuColors(
 
 val LocalMusikuColors = staticCompositionLocalOf { DarkColors }
 
+/** Resolved light/dark state, so chrome can follow the chosen theme instead of the system switch. */
+val LocalIsDark = staticCompositionLocalOf { true }
+
 /**
  * App-wide palette tokens, resolved from [LocalMusikuColors]. These are `@Composable` getters
  * (every call site sits in a composable), so the whole tree simply re-reads them when the
  * system light/dark setting changes — no call site needs to know which theme is active.
  */
 object Tok {
+    val IsDark: Boolean @Composable get() = LocalIsDark.current
     val Window: Color @Composable get() = LocalMusikuColors.current.Window
     val Surface: Color @Composable get() = LocalMusikuColors.current.Surface
     val Fill1: Color @Composable get() = LocalMusikuColors.current.Fill1
@@ -163,10 +168,17 @@ object Tok {
 }
 
 @Composable
-fun MusikuTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun MusikuTheme(mode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (mode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
     val colors = if (dark) DarkColors else LightColors
-    CompositionLocalProvider(LocalMusikuColors provides colors) {
+    CompositionLocalProvider(
+        LocalMusikuColors provides colors,
+        LocalIsDark provides dark,
+    ) {
         MaterialTheme(
             colorScheme = if (dark) {
                 darkColorScheme(

@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
+import app.musiku.ui.theme.LocalLowDevice
 import kotlin.math.sin
 
 /**
@@ -112,9 +113,11 @@ internal fun rememberLiquidMetal(
     masked: Boolean = true,
     lift: Float = 0f,
 ): LiquidMetal {
+    val lowDevice = LocalLowDevice.current
     val clock = remember { mutableFloatStateOf(0f) }
     val currentSpeed by rememberUpdatedState(speed)
-    LaunchedEffect(Unit) {
+    LaunchedEffect(lowDevice) {
+        if (lowDevice) return@LaunchedEffect
         var last = 0L
         while (true) {
             withFrameMillis { now ->
@@ -124,7 +127,8 @@ internal fun rememberLiquidMetal(
         }
     }
 
-    val surface = remember { sharedSurface }
+    // No frame loop and no AGSL program on low-device mode: keep the static metallic fallback.
+    val surface = remember(lowDevice) { if (lowDevice) null else sharedSurface }
 
     return remember(surface, scale, masked, lift) {
         LiquidMetal({ clock.floatValue }, surface, scale, masked, lift)

@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.musiku.ui.LocalApp
+import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.Tok
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
@@ -108,6 +109,7 @@ fun LargeTitleList(
     content: LazyListScope.() -> Unit,
 ) {
     val density = LocalDensity.current
+    val lowDevice = LocalLowDevice.current
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val window = Tok.Window
     // The whole status-bar + bar strip is glass, and the list starts right below it.
@@ -169,7 +171,9 @@ fun LargeTitleList(
                 // The list is the Haze source: it keeps drawing edge to edge underneath the bar. The
                 // page colour sits *inside* the source, so the blur samples a filled canvas — without
                 // it the gaps around artwork are transparent and the sharp original bleeds through.
-                modifier = Modifier.fillMaxSize().haze(hazeState).background(window).iosBounce(),
+                modifier = Modifier.fillMaxSize()
+                    .then(if (lowDevice) Modifier else Modifier.haze(hazeState))
+                    .background(window).iosBounce(),
             ) {
                 item(key = "large-title") {
                     Text(
@@ -192,11 +196,18 @@ fun LargeTitleList(
             Modifier
                 .fillMaxWidth()
                 .height(barHeight)
-                .hazeChild(hazeState, style = style) {
-                    blurEnabled = true
-                    progressive = blurRamp
-                }
-                .background(tint),
+                .then(
+                    if (lowDevice) {
+                        Modifier.background(window)
+                    } else {
+                        Modifier
+                            .hazeChild(hazeState, style = style) {
+                                blurEnabled = true
+                                progressive = blurRamp
+                            }
+                            .background(tint)
+                    }
+                ),
         ) {
             Box(Modifier.fillMaxSize().statusBarsPadding()) {
                 Text(

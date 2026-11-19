@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.MIcons
 import app.musiku.ui.theme.SfDetailIcons
 
@@ -570,6 +571,7 @@ fun ArtistHeroImage(
     modifier: Modifier = Modifier,
     heroScale: () -> Float = { 1f },
 ) {
+    val lowDevice = LocalLowDevice.current
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val side = maxWidth
         Box(
@@ -597,7 +599,7 @@ fun ArtistHeroImage(
                             .fillMaxWidth()
                             .height(side * (ArtistHeroExtent - ArtistArtworkExtent))
                             .align(Alignment.BottomCenter)
-                            .blur(24.dp)
+                            .then(if (lowDevice) Modifier else Modifier.blur(24.dp))
                             .alpha(0.7f),
                     ) {
                         Artwork(artworkUrl, Modifier.fillMaxSize())
