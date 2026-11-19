@@ -574,72 +574,79 @@ fun MorphDock(
             null
         }
 
-        // Expanded tabs live inside the pill that shrinks into the left circle.
+        // Press-only recording covers the whole row (tab pill + search circle), not just the pill:
+        // the puck travels over all three tabs, so a drag onto Search has to refract the magnifier
+        // instead of painting the page over it.
         Box(
             Modifier
-                .offset(x = barX, y = barY)
-                .width(barWidth)
-                .height(DockBarHeight)
-                .graphicsLayer {
-                    translationX = panelOffset.value
-                    translationY = PlayerMorph.landingDipPx * LandingEchoShare
-                    shape = CircleShape
-                    // Convx clips the pill only while it morphs; at rest the pressed puck is
-                    // allowed to grow past the bar's bounds.
-                    clip = travel > 0.001f || pressed
-                }
-                // Press-only recording; the puck has nothing to refract unless it is held.
-                .then(if (pressed) Modifier.layerBackdrop(barBackdrop) else Modifier)
-                .liquidGlass(CircleShape)
-                .then(interactiveHighlight.modifier),
+                .fillMaxSize()
+                .then(if (pressed) Modifier.layerBackdrop(barBackdrop) else Modifier),
         ) {
-            Tabs.forEachIndexed { index, tab ->
-                if (index == 1) return@forEachIndexed
-                val target = if (index == contentIndex) contentCenter else otherCenter
-                val alpha = if (index == contentIndex) 1f else otherAlpha
-                Box(
-                    Modifier
-                        .offset(x = target - barX - itemWidth / 2)
-                        .width(itemWidth)
-                        .fillMaxHeight(),
-                ) {
-                    DockTabItem(
-                        tab = tab,
-                        selected = tab.route == selected,
-                        labelAlpha = labelAlpha,
-                        itemAlpha = alpha,
-                        onClick = { onTab(tab) },
-                    )
-                }
-            }
-        }
-
-        // Search is its own circle in both states, like Convx's standalone tab.
-        Box(
-            Modifier
-                .offset(x = searchCenter - itemWidth / 2, y = barY)
-                .width(itemWidth)
-                .height(DockBarHeight)
-                .graphicsLayer {
-                    translationX = panelOffset.value
-                    translationY = PlayerMorph.landingDipPx * LandingEchoShare
-                },
-        ) {
+            // Expanded tabs live inside the pill that shrinks into the left circle.
             Box(
                 Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = travel.coerceIn(0f, 1f) }
+                    .offset(x = barX, y = barY)
+                    .width(barWidth)
+                    .height(DockBarHeight)
+                    .graphicsLayer {
+                        translationX = panelOffset.value
+                        translationY = PlayerMorph.landingDipPx * LandingEchoShare
+                        shape = CircleShape
+                        // Convx clips the pill only while it morphs; at rest the pressed puck is
+                        // allowed to grow past the bar's bounds.
+                        clip = travel > 0.001f || pressed
+                    }
                     .liquidGlass(CircleShape)
-                    .clip(CircleShape),
-            )
-            DockTabItem(
-                tab = SearchTab,
-                selected = SearchTab.route == selected,
-                labelAlpha = labelAlpha,
-                itemAlpha = 1f,
-                // Convx's standalone search tab navigates without expanding the bar.
-                onClick = { onSelect(SearchTab.route) },
-            )
+                    .then(interactiveHighlight.modifier),
+            ) {
+                Tabs.forEachIndexed { index, tab ->
+                    if (index == 1) return@forEachIndexed
+                    val target = if (index == contentIndex) contentCenter else otherCenter
+                    val alpha = if (index == contentIndex) 1f else otherAlpha
+                    Box(
+                        Modifier
+                            .offset(x = target - barX - itemWidth / 2)
+                            .width(itemWidth)
+                            .fillMaxHeight(),
+                    ) {
+                        DockTabItem(
+                            tab = tab,
+                            selected = tab.route == selected,
+                            labelAlpha = labelAlpha,
+                            itemAlpha = alpha,
+                            onClick = { onTab(tab) },
+                        )
+                    }
+                }
+            }
+
+            // Search is its own circle in both states, like Convx's standalone tab.
+            Box(
+                Modifier
+                    .offset(x = searchCenter - itemWidth / 2, y = barY)
+                    .width(itemWidth)
+                    .height(DockBarHeight)
+                    .graphicsLayer {
+                        translationX = panelOffset.value
+                        translationY = PlayerMorph.landingDipPx * LandingEchoShare
+                    },
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = travel.coerceIn(0f, 1f) }
+                        .liquidGlass(CircleShape)
+                        .clip(CircleShape),
+                )
+                DockTabItem(
+                    tab = SearchTab,
+                    selected = SearchTab.route == selected,
+                    labelAlpha = labelAlpha,
+                    itemAlpha = 1f,
+                    // Convx's standalone search tab navigates without expanding the bar.
+                    onClick = { onSelect(SearchTab.route) },
+                )
+            }
         }
 
         if (hasPlayer) {
