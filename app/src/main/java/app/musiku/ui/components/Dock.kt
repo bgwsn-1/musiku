@@ -498,7 +498,8 @@ fun MorphDock(
                 selected = SearchTab.route == selected,
                 labelAlpha = labelAlpha,
                 itemAlpha = 1f,
-                onClick = { onTab(SearchTab) },
+                // Convx's standalone search tab navigates without expanding the bar.
+                onClick = { onSelect(SearchTab.route) },
             )
         }
 
