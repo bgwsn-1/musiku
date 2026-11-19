@@ -113,7 +113,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.PI
@@ -316,13 +315,7 @@ fun YosLyricView(
             Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = scrollState,
-                // Only the bottom half is padded: it lets the last line reach the centre. The top
-                // gets none, so the opening lines sit just under the header instead of leaving half
-                // a screen empty while the song has no previous lines to fill it. Centring takes
-                // over on its own once enough lines have gone by.
-                contentPadding = PaddingValues(
-                    bottom = with(LocalDensity.current) { (height.intValue / 2f).toDp() },
-                ),
+                contentPadding = PaddingValues(vertical = with(LocalDensity.current) { (height.intValue / 2f).toDp() }),
                 modifier =
                 modifier
                     .fillMaxSize()
@@ -524,29 +517,10 @@ fun YosLyricView(
         }
 
         YosWrapper {
-            // [height] is a key: content padding is half the list height, so the first pass —
-            // before onSizeChanged has reported a height — lays the list out at the top and
-            // leaves the active line stranded below the fold. Place it once the height is known,
-            // without animating, then follow each line change with the rubber as Convx does.
-            val centered = remember { mutableStateOf(false) }
             LaunchedEffect(focusedLyricAnchorIndex.value, translationLambda(), enableLyricScroll.value,
-                autoScrollEnabled, isSynced, height.intValue) {
-                if (!isSynced || !enableLyricScroll.value || height.intValue <= 0) return@LaunchedEffect
-                val anchor = focusedLyricAnchorIndex.value
-                // Intro: no line is active yet, so park the first one in the middle instead of
-                // leaving it under half a screen of padding.
-                val target = if (anchor >= 0) anchor + 1 else 1
-                when {
-                    !centered.value -> {
-                        // The list has no measured items on the first frame; wait for it so the park
-                        // below is not dropped and the lyrics never end up half a screen low.
-                        snapshotFlow { scrollState.layoutInfo.totalItemsCount }
-                            .first { it > 0 }
-                        scrollState.followLyricLine(target, animate = false)
-                        centered.value = true
-                    }
-                    anchor >= 0 && autoScrollEnabled ->
-                        scrollState.followLyricLine(target, rubber = rubber)
+                autoScrollEnabled, isSynced) {
+                if (autoScrollEnabled && isSynced && enableLyricScroll.value && focusedLyricAnchorIndex.value >= 0) {
+                    scrollState.followLyricLine(focusedLyricAnchorIndex.value + 1, rubber = rubber)
                 }
             }
         }

@@ -12,7 +12,15 @@ data class Track(
     val duration: String? = null,
 )
 
-data class LyricLine(val timeSec: Float, val text: String)
+/** One sung word of an enhanced (A2) LRC line, in milliseconds. */
+data class LyricWord(val text: String, val startMs: Long, val endMs: Long)
+
+data class LyricLine(
+    val timeSec: Float,
+    val text: String,
+    /** Present only when the source carried per-word stamps. */
+    val words: List<LyricWord>? = null,
+)
 
 data class AlbumSummary(
     val browseId: String,

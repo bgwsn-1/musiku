@@ -65,9 +65,9 @@ fun activeLyricIndex(lines: List<LyricLine>, position: Float): Int {
 }
 
 /**
- * Synced lyrics, rendered by Convx's Flamingo view. The active line lights as a whole (Musiku
- * has line timings only), the lines around it dim in steps, and each line change pulls the list
- * to centre through the rubber-string scroll.
+ * Synced lyrics, rendered by Convx's Flamingo view. Enhanced LRC sweeps word by word; plain LRC
+ * estimates a pace from word lengths. Each line change pulls the list to centre through the same
+ * rubber-string scroll Convx uses.
  */
 @Composable
 fun LyricsPanel(track: Track, onClose: () -> Unit) {
