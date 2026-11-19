@@ -1,6 +1,14 @@
 package app.musiku.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,8 +33,6 @@ import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.lazy.itemsIndexed as listItemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -66,6 +72,7 @@ import app.musiku.ui.components.TextPromptDialog
 import app.musiku.ui.components.TrackRow
 import app.musiku.ui.components.pressable
 import app.musiku.ui.theme.MIcons
+import app.musiku.ui.theme.SfLibraryIcons
 import app.musiku.ui.theme.SfPro
 import app.musiku.ui.theme.Tok
 import java.time.Instant
@@ -105,13 +112,47 @@ private data class RecentItem(
 fun LibraryScreen() {
     var page by rememberSaveable { mutableStateOf(LibraryPage.Home) }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = historyOpen) { historyOpen = false }
+    var forward by remember { mutableStateOf(true) }
+
+    fun openSection(next: LibraryPage) {
+        forward = true
+        page = next
+    }
+
+    fun openHistory() {
+        forward = true
+        historyOpen = true
+    }
+
+    fun goBack() {
+        forward = false
+        if (historyOpen) historyOpen = false else page = LibraryPage.Home
+    }
+
+    // A local section is part of the Library tab, so system back has to close it instead of
+    // popping the tab itself and landing on Home.
+    BackHandler(enabled = historyOpen || page != LibraryPage.Home) { goBack() }
+
+    val spec = tween<androidx.compose.ui.unit.IntOffset>(340, easing = FastOutSlowInEasing)
     Box(Modifier.fillMaxSize().background(Tok.Window)) {
-        when (page) {
-            LibraryPage.Home -> LibraryHome(onOpen = { page = it }, onHistory = { historyOpen = true })
-            else -> LibraryCollection(page = page, onBack = { page = LibraryPage.Home })
+        AnimatedContent(
+            targetState = if (historyOpen) "history" else page.name,
+            transitionSpec = {
+                if (forward) {
+                    (slideInHorizontally(spec) { it } + fadeIn(tween(200)))
+                        .togetherWith(slideOutHorizontally(spec) { -it / 4 } + fadeOut(tween(200)))
+                } else {
+                    (slideInHorizontally(spec) { -it / 4 } + fadeIn(tween(200)))
+                        .togetherWith(slideOutHorizontally(spec) { it } + fadeOut(tween(200)))
+                }
+            },
+        ) { target ->
+            when (target) {
+                "history" -> HistoryScreen(onBack = ::goBack)
+                LibraryPage.Home.name -> LibraryHome(onOpen = ::openSection, onHistory = ::openHistory)
+                else -> LibraryCollection(page = LibraryPage.valueOf(target), onBack = ::goBack)
+            }
         }
-        if (historyOpen) HistoryScreen(onBack = { historyOpen = false })
     }
 }
 
@@ -121,8 +162,6 @@ private fun LibraryHome(onOpen: (LibraryPage) -> Unit, onHistory: () -> Unit) {
     val ui = LocalUi.current
     val liked by app.library.liked.collectAsState()
     val playlists by app.library.playlists.collectAsState()
-    var creating by remember { mutableStateOf(false) }
-    var menuOpen by remember { mutableStateOf(false) }
 
     val pinned = remember(playlists) { playlists.sortedByDescending { it.createdAt }.take(6) }
     val artists = remember(liked) {
@@ -162,49 +201,20 @@ private fun LibraryHome(onOpen: (LibraryPage) -> Unit, onHistory: () -> Unit) {
         }.take(6)
     }
 
-    LargeTitleList(
-        "Pustaka",
-        actions = {
-            Box {
-                Box(
-                    Modifier.size(44.dp).clip(CircleShape).background(Tok.Fill2).pressable { menuOpen = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(MIcons.Ellipsis, null, tint = Tok.Label1, modifier = Modifier.size(22.dp))
-                }
-                DropdownMenu(
-                    expanded = menuOpen,
-                    onDismissRequest = { menuOpen = false },
-                    modifier = Modifier.background(Tok.Surface),
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Playlist baru…", style = SfStyle(17.sp, 20.sp, tracking = (-0.43).sp), color = Tok.Label1) },
-                        onClick = { menuOpen = false; creating = true },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Riwayat", style = SfStyle(17.sp, 20.sp, tracking = (-0.43).sp), color = Tok.Label1) },
-                        onClick = { menuOpen = false; onHistory() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Import dari Spotify", style = SfStyle(17.sp, 20.sp, tracking = (-0.43).sp), color = Tok.Label1) },
-                        onClick = { menuOpen = false; ui.spotifyImportOpen = true },
-                    )
-                }
-            }
-        },
-    ) {
+    LargeTitleList("Pustaka") {
         if (pinned.isNotEmpty()) {
             item(key = "pinned") { PinnedGrid(pinned) { pl -> ui.navigate(Routes.playlist(pl.id)) } }
         }
 
         item(key = "categories") {
             Column {
-                LibraryCategory("Playlist", MIcons.Music) { onOpen(LibraryPage.Playlists) }
-                LibraryCategory("Artis", MIcons.Mic) { onOpen(LibraryPage.Artists) }
-                LibraryCategory("Album", MIcons.Disc) { onOpen(LibraryPage.Albums) }
-                LibraryCategory("Lagu", MIcons.List) { onOpen(LibraryPage.Songs) }
-                LibraryCategory("Disukai", MIcons.HeartOutline) { onOpen(LibraryPage.Liked) }
-                LibraryCategory("Impor Spotify", MIcons.Link) { ui.spotifyImportOpen = true }
+                LibraryCategory("Playlist", SfLibraryIcons.MusicNoteList) { onOpen(LibraryPage.Playlists) }
+                LibraryCategory("Artis", SfLibraryIcons.Microphone) { onOpen(LibraryPage.Artists) }
+                LibraryCategory("Album", SfLibraryIcons.SquareStack) { onOpen(LibraryPage.Albums) }
+                LibraryCategory("Lagu", SfLibraryIcons.MusicNote) { onOpen(LibraryPage.Songs) }
+                LibraryCategory("Disukai", SfLibraryIcons.Heart) { onOpen(LibraryPage.Liked) }
+                LibraryCategory("Riwayat", SfLibraryIcons.Clock) { onHistory() }
+                LibraryCategory("Impor Spotify", SfLibraryIcons.Link) { ui.spotifyImportOpen = true }
             }
         }
 
@@ -236,7 +246,7 @@ private fun LibraryHome(onOpen: (LibraryPage) -> Unit, onHistory: () -> Unit) {
         } else {
             item(key = "library-empty") {
                 LibraryEmptyState(
-                    icon = MIcons.Music,
+                    icon = SfLibraryIcons.MusicNoteList,
                     title = "Belum ada musik",
                     body = "Tambahkan lagu lewat playlist atau impor dari Spotify, nanti muncul di sini.",
                     action = "Impor dari Spotify",
@@ -244,14 +254,6 @@ private fun LibraryHome(onOpen: (LibraryPage) -> Unit, onHistory: () -> Unit) {
                 )
             }
         }
-    }
-
-    if (creating) {
-        TextPromptDialog("Playlist baru", "Buat", onDismiss = { creating = false }, onConfirm = {
-            val pl = app.library.createPlaylist(it)
-            creating = false
-            ui.navigate(Routes.playlist(pl.id))
-        })
     }
 }
 
@@ -457,7 +459,7 @@ private fun LibraryCollection(page: LibraryPage, onBack: () -> Unit) {
                 if (playlists.isEmpty()) {
                     item(key = "no-playlists") {
                         LibraryEmptyState(
-                            icon = MIcons.Music,
+                            icon = SfLibraryIcons.MusicNoteList,
                             title = "Belum ada playlist",
                             body = "Buat playlist pertamamu untuk mulai mengumpulkan lagu.",
                             action = "Buat playlist",
@@ -517,7 +519,7 @@ private fun LibraryCollection(page: LibraryPage, onBack: () -> Unit) {
                 if (liked.isEmpty()) {
                     item(key = "no-songs") {
                         LibraryEmptyState(
-                            icon = MIcons.HeartOutline,
+                            icon = SfLibraryIcons.Heart,
                             title = "Belum ada lagu",
                             body = "Tekan ikon hati di lagu mana pun, nanti muncul di sini.",
                             action = "Cari lagu",
@@ -674,7 +676,7 @@ private fun HistoryScreen(onBack: () -> Unit) {
         if (history.isEmpty()) {
             item(key = "history-empty") {
                 LibraryEmptyState(
-                    icon = MIcons.List,
+                    icon = SfLibraryIcons.Clock,
                     title = "Belum ada riwayat",
                     body = "Lagu yang kamu putar minimal 30 detik akan muncul di sini.",
                     action = "Cari lagu",
