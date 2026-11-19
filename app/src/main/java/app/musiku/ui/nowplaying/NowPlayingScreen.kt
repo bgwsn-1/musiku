@@ -312,15 +312,7 @@ private fun PlayerCover(track: Track, playing: Boolean) {
             .shadow(8.dp, RoundedCornerShape(12.dp))
             .clip(RoundedCornerShape(12.dp)),
     ) {
-        AnimatedContent(
-            targetState = track.thumbs,
-            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
-            contentKey = { it },
-            label = "coverArt",
-            modifier = Modifier.fillMaxSize(),
-        ) { url ->
-            Artwork(url, Modifier.fillMaxSize(), contentDescription = "Sampul ${track.title}")
-        }
+        CanvasOrArtwork(track = track, playing = playing, modifier = Modifier.fillMaxSize())
     }
 }
 

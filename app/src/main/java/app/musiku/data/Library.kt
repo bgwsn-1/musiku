@@ -99,6 +99,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kSpotifyMatches = stringPreferencesKey("spotifyMatches")
     private val kBookmarkedArtists = stringPreferencesKey("bookmarkedArtists")
     private val kLowDevice = booleanPreferencesKey("lowDevice")
+    private val kCanvasEnabled = booleanPreferencesKey("canvasEnabled")
 
     private val _liked = MutableStateFlow<List<Track>>(emptyList())
     private val _bookmarkedArtists = MutableStateFlow<Set<String>>(emptySet())
@@ -112,6 +113,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val _shuffle = MutableStateFlow(false)
     private val _repeat = MutableStateFlow(0)
     private val _lowDevice = MutableStateFlow(false)
+    private val _canvasEnabled = MutableStateFlow(false)
 
     /** Spotify track URI → the YouTube Music track it was matched to, so syncs skip old work. */
     private val spotifyCache = java.util.concurrent.ConcurrentHashMap<String, Track>()
@@ -129,6 +131,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     val shuffle: StateFlow<Boolean> = _shuffle
     val repeat: StateFlow<Int> = _repeat
     val lowDevice: StateFlow<Boolean> = _lowDevice
+    /** Spotify Canvas behind the player artwork. Opt-in: it needs a Spotify session cookie. */
+    val canvasEnabled: StateFlow<Boolean> = _canvasEnabled
 
     @Volatile var loaded = false
         private set
@@ -170,6 +174,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             _shuffle.value = p[kShuffle] ?: false
             _repeat.value = (p[kRepeat] ?: 0).coerceIn(0, 2)
             _lowDevice.value = p[kLowDevice] ?: false
+            _canvasEnabled.value = p[kCanvasEnabled] ?: false
             loaded = true
             ready.complete(Unit)
         }
@@ -334,6 +339,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     fun setShuffle(on: Boolean) { _shuffle.value = on; save { it[kShuffle] = on } }
     fun setRepeat(mode: Int) { _repeat.value = mode; save { it[kRepeat] = mode } }
     fun setLowDevice(on: Boolean) { _lowDevice.value = on; save { it[kLowDevice] = on } }
+    fun setCanvasEnabled(on: Boolean) { _canvasEnabled.value = on; save { it[kCanvasEnabled] = on } }
 
     companion object {
         /** JSON string in DataStore is capped well below the ~5 MB localStorage budget. */

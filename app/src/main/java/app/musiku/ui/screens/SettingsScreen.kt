@@ -85,6 +85,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     val autoplay by app.library.autoplay.collectAsState()
     val historyEnabled by app.library.historyEnabled.collectAsState()
     val lowDevice by app.library.lowDevice.collectAsState()
+    val canvasEnabled by app.library.canvasEnabled.collectAsState()
+    val canvasStatus by app.canvas.status.collectAsState()
     var license by remember { mutableStateOf(false) }
 
     val versionName = remember(ctx) {
@@ -140,6 +142,32 @@ fun SettingsScreen(onBack: () -> Unit) {
                             trailing = "$cfSec detik",
                             chevron = false,
                             onClick = { app.library.setCfSec(nextCfSec(cfSec)) },
+                        )
+                    }
+                    SettingsDivider()
+                    SettingsToggleRow(
+                        icon = MIcons.Disc,
+                        tint = SysPink,
+                        title = "Sampul animasi",
+                        subtitle = if (lowDevice) {
+                            "Mati selama mode perangkat rendah aktif"
+                        } else {
+                            "Putar video Canvas Spotify di layar pemutar"
+                        },
+                        checked = canvasEnabled && !lowDevice,
+                        onCheckedChange = { app.library.setCanvasEnabled(it) },
+                        enabled = !lowDevice,
+                    )
+                    if (canvasEnabled && !lowDevice) {
+                        SettingsDivider()
+                        SettingsRow(
+                            icon = MIcons.Info,
+                            tint = SysGray,
+                            title = "Status Canvas",
+                            subtitle = canvasStatus.ifBlank {
+                                "Buka layar pemutar untuk mencoba"
+                            },
+                            chevron = false,
                         )
                     }
                 }
@@ -337,19 +365,24 @@ private fun SettingsToggleRow(
     subtitle: String? = null,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .defaultMinSize(minHeight = 52.dp)
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
         SettingsTile(icon, tint)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = Tok.Label1, fontSize = 17.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                title,
+                color = if (enabled) Tok.Label1 else Tok.Label3,
+                fontSize = 17.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
             if (subtitle != null) {
                 Text(
                     subtitle, color = Tok.Label3, fontSize = 13.sp, lineHeight = 18.sp,
@@ -361,6 +394,7 @@ private fun SettingsToggleRow(
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = SysGreen,

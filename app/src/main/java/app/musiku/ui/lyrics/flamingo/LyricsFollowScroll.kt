@@ -1,7 +1,6 @@
 /** Adapted from Flamingo by Yos-X, GPL-3.0. See NOTICE. */
 package app.musiku.ui.lyrics.flamingo
 
-import android.animation.ValueAnimator
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -159,7 +158,7 @@ internal suspend fun LazyListState.followLyricLine(itemIndex: Int, animate: Bool
     if (distance < 0 && !canScrollBackward) return
     when {
         !animate -> scrollBy(distance)
-        rubber != null && abs(distance) <= viewport * RUBBER_MAX_VIEWPORT && ValueAnimator.areAnimatorsEnabled() ->
+        rubber != null && abs(distance) <= viewport * RUBBER_MAX_VIEWPORT && areAnimatorsEnabled() ->
             rubber.fire(distance, itemIndex)
         else -> animateScrollBy(distance, LyricScrollSpec)
     }

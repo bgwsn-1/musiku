@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.chrisbanes.haze.HazeState
@@ -100,6 +101,7 @@ import app.musiku.ui.screens.SearchScreen
 import app.musiku.ui.screens.activeLyricIndex
 import app.musiku.ui.screens.rememberLyrics
 import app.musiku.ui.theme.LocalGlassBackdrop
+import app.musiku.ui.theme.LocalGlassFrozen
 import app.musiku.ui.theme.LocalHazeState
 import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.Tok
@@ -218,17 +220,26 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
         // The vendored Kyant backdrop records the routed page into its own layer; every glass
         // surface samples that layer (blur + AGSL lens) instead of approximating a backdrop.
         val glassBackdrop = rememberLayerBackdrop()
+        // Re-blurring that layer is the expensive half of the effect, and a transition makes the
+        // page change on every frame. Glass replays its last capture for the length of the slide.
+        val navFreeze = remember { NavTransitionFreeze() }
+        LaunchedEffect(route) { navFreeze.mark() }
         Box(Modifier.fillMaxSize().background(Tok.Window)) {
             CompositionLocalProvider(
                 LocalHazeState provides if (lowDevice) null else hazeState,
                 LocalGlassBackdrop provides if (lowDevice) null else glassBackdrop,
+                LocalGlassFrozen provides navFreeze.frozen,
             ) {
                 Box(
                     Modifier
                         .fillMaxSize()
                         .nestedScroll(dockScroll)
                         // Low-device mode records no backdrop at all — glass surfaces go flat.
-                        .then(if (lowDevice) Modifier else Modifier.layerBackdrop(glassBackdrop).haze(hazeState)),
+                        .then(if (lowDevice) Modifier else Modifier.layerBackdrop(glassBackdrop))
+                        // The Haze source only feeds the update prompt's glass. Keeping it attached
+                        // while that prompt is hidden made every scroll and every transition
+                        // re-record the whole page for a surface nobody could see.
+                        .then(if (!lowDevice && updateVisible) Modifier.haze(hazeState) else Modifier),
                 ) {
                     NavHost(
                         navController = nav,
@@ -439,22 +450,51 @@ private fun selectTab(nav: androidx.navigation.NavController, route: String) {
     }
 }
 
-private val spec = tween<androidx.compose.ui.unit.IntOffset>(340, easing = FastOutSlowInEasing)
+// Push/pop travel: the incoming screen crosses the full width while the outgoing one covers 30%
+// of it, so the two read as depth instead of sliding in lockstep. Tabs use the same motion —
+// switching tabs is a page change, not a crossfade. No alpha on either side: a fade here reads as
+// a fast dissolve on heavy pages, and a slide-only transition also skips a compositing layer.
+private const val PushMillis = 300
+private const val PushParallax = 0.30f
 
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.bothTabs() =
-    initialState.destination.route in TabRoutes && targetState.destination.route in TabRoutes
+// 300ms slide plus frame-delivery slop.
+private const val NavFreezeWindowNs = 360_000_000L
+
+private val pushSlide = tween<IntOffset>(PushMillis, easing = FastOutSlowInEasing)
+
+private fun parallax(fullWidth: Int): Int = -(fullWidth * PushParallax).toInt()
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.enter(): EnterTransition =
-    if (bothTabs()) fadeIn(tween(200)) else slideInHorizontally(spec) { it } + fadeIn(tween(200))
+    slideInHorizontally(pushSlide) { it }
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.exit(): ExitTransition =
-    if (bothTabs()) fadeOut(tween(120)) else slideOutHorizontally(spec) { -it / 4 } + fadeOut(tween(250))
+    slideOutHorizontally(pushSlide) { parallax(it) }
 
+// Back mirrors the push: the screen underneath eases in from the left while the one on top
+// slides off to the right.
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(): EnterTransition =
-    if (bothTabs()) fadeIn(tween(200)) else slideInHorizontally(spec) { -it / 4 } + fadeIn(tween(250))
+    slideInHorizontally(pushSlide) { parallax(it) }
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(): ExitTransition =
-    if (bothTabs()) fadeOut(tween(120)) else slideOutHorizontally(spec) { it } + fadeOut(tween(200))
+    slideOutHorizontally(pushSlide) { it }
+
+/**
+ * Marks the start of a screen transition. Draw-phase code asks [frozen] whether glass should
+ * replay the capture it already has instead of re-blurring the backdrop. A plain array keeps that
+ * read out of snapshot state, so checking it never invalidates the frame that is checking.
+ */
+private class NavTransitionFreeze {
+    private val startedAtNs = longArrayOf(0L)
+
+    val frozen: () -> Boolean = {
+        val started = startedAtNs[0]
+        started != 0L && System.nanoTime() - started < NavFreezeWindowNs
+    }
+
+    fun mark() {
+        startedAtNs[0] = System.nanoTime()
+    }
+}
 
 /** Player + the lyrics / queue panels that slide over it. */
 @Composable

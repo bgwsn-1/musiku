@@ -186,7 +186,7 @@ fun YosLyricView(
         val glowBreath = remember { Animatable(1f) }
 
         LaunchedEffect(glow, isPlaying) {
-            if (!glow || !isPlaying || !android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            if (!glow || !isPlaying || !areAnimatorsEnabled()) {
                 glowBreath.animateTo(1f, tween(260, easing = yosEasing))
                 return@LaunchedEffect
             }
@@ -688,7 +688,7 @@ fun LazyItemScope.LyricItem(
 
     val focusedColor = Color(0xFFFFFFFF)
     val unfocusedColor = Color(0x2EFFFFFF)
-    val animateWords = wordSwell && android.animation.ValueAnimator.areAnimatorsEnabled()
+    val animateWords = wordSwell && areAnimatorsEnabled()
 
     val isNotOneByOne = rememberSaveable(mainLyric) {
         mutableStateOf(

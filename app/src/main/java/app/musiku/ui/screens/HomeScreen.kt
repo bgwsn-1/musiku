@@ -1,5 +1,8 @@
 package app.musiku.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -114,6 +118,34 @@ fun HomeScreen() {
     var selectedChip by remember { mutableStateOf<HomeChip?>(null) }
     var chipShelves by remember { mutableStateOf<List<HomeShelf>?>(null) }
     var chipLoading by remember { mutableStateOf(false) }
+    // The feed is swapped, not recoloured: when a filter's content lands the shelves lift and
+    // fade into place together. The value is read at draw time, so shelves that compose later
+    // (while scrolling) start at full opacity and never animate again. The first content is left
+    // alone: the screen itself is already sliding in, and a second animation on top of a page
+    // transition is what made switching tabs feel like a stutter.
+    val feedAnim = remember { Animatable(1f) }
+    var shownFeed by remember { mutableStateOf<String?>(null) }
+    val activeChip = selectedChip
+    val feedReady = if (activeChip == null) load is Load.Ok else chipShelves != null
+    val feedKey = activeChip?.let { it.browseId + "|" + it.params } ?: "all"
+    LaunchedEffect(feedKey, feedReady) {
+        if (!feedReady) return@LaunchedEffect
+        if (shownFeed == null) {
+            shownFeed = feedKey
+            return@LaunchedEffect
+        }
+        if (shownFeed == feedKey) return@LaunchedEffect
+        shownFeed = feedKey
+        feedAnim.snapTo(0f)
+        feedAnim.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(260, easing = FastOutSlowInEasing),
+        )
+    }
+    val feedMotion = Modifier.graphicsLayer {
+        alpha = feedAnim.value
+        translationY = (1f - feedAnim.value) * 10.dp.toPx()
+    }
 
     // A chip browses its own feed; the synthesised shelves stay in memory so tapping "Semua"
     // or the same chip again returns instantly.
@@ -173,7 +205,7 @@ fun HomeScreen() {
                     contentAlignment = Alignment.Center,
                 ) { MusikuLoading() }
             }
-            chip != null -> chipFeed(chipShelves.orEmpty(), app.player, ui) { loadChip(chip) }
+            chip != null -> chipFeed(chipShelves.orEmpty(), app.player, ui, feedMotion) { loadChip(chip) }
             else -> when (val l = load) {
                 is Load.Loading -> item(key = "loading") {
                     Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.6f), contentAlignment = Alignment.Center) {
@@ -189,7 +221,7 @@ fun HomeScreen() {
                         )
                     }
                 }
-                is Load.Ok -> homeFeed(l.value, recent, app.player, ui)
+                is Load.Ok -> homeFeed(l.value, recent, app.player, ui, feedMotion)
             }
         }
     }
@@ -255,6 +287,7 @@ private fun LazyListScope.homeFeed(
     recent: List<Track>,
     player: PlayerController,
     ui: UiState,
+    motion: Modifier,
 ) {
     // Convx's home opens on the Top Picks rail. Musiku's feed marks that shelf from the charts
     // page; without one, the recently played songs stand in so the rail is never empty.
@@ -266,34 +299,40 @@ private fun LazyListScope.homeFeed(
     }
     if (heroEntries.isNotEmpty()) {
         item(key = "hero") {
-            HomeHeroRail(
-                title = heroShelf?.title?.ifBlank { null } ?: "Pilihan teratas untukmu",
-                entries = heroEntries,
-            )
+            Box(motion) {
+                HomeHeroRail(
+                    title = heroShelf?.title?.ifBlank { null } ?: "Pilihan teratas untukmu",
+                    entries = heroEntries,
+                )
+            }
         }
     }
 
     if (!heroFromRecent && recent.size >= 2) {
         item(key = "recent") {
-            HomeCardRow(
-                title = "Dengarkan lagi",
-                entries = recentEntries(recent.take(12), player, ui),
-                chevron = true,
-            )
+            Box(motion) {
+                HomeCardRow(
+                    title = "Dengarkan lagi",
+                    entries = recentEntries(recent.take(12), player, ui),
+                    chevron = true,
+                )
+            }
         }
     }
 
     shelves.forEachIndexed { index, shelf ->
         if (shelf.hero) return@forEachIndexed
-        homeShelf("shelf-$index", shelf, player, ui)
+        homeShelf("shelf-$index", shelf, player, ui, motion)
     }
 
     item(key = "footer") {
-        Text(
-            "Metadata dari YouTube Music. Favorit dan playlist tersimpan di perangkat ini, tanpa akun.",
-            color = Tok.Label3, fontSize = 13.sp, lineHeight = 18.sp,
-            modifier = Modifier.padding(horizontal = HomeGutter, vertical = 8.dp),
-        )
+        Box(motion) {
+            Text(
+                "Metadata dari YouTube Music. Favorit dan playlist tersimpan di perangkat ini, tanpa akun.",
+                color = Tok.Label3, fontSize = 13.sp, lineHeight = 18.sp,
+                modifier = Modifier.padding(horizontal = HomeGutter, vertical = 8.dp),
+            )
+        }
     }
 }
 
@@ -305,6 +344,7 @@ private fun LazyListScope.chipFeed(
     shelves: List<HomeShelf>,
     player: PlayerController,
     ui: UiState,
+    motion: Modifier,
     onRetry: () -> Unit,
 ) {
     if (shelves.isEmpty()) {
@@ -320,7 +360,7 @@ private fun LazyListScope.chipFeed(
         return
     }
     shelves.forEachIndexed { index, shelf ->
-        homeShelf("chip-shelf-$index", shelf, player, ui)
+        homeShelf("chip-shelf-$index", shelf, player, ui, motion)
     }
 }
 
@@ -330,25 +370,30 @@ private fun LazyListScope.homeShelf(
     shelf: HomeShelf,
     player: PlayerController,
     ui: UiState,
+    motion: Modifier = Modifier,
 ) {
     val queue = shelf.items.mapNotNull { it.toTrack() }
     if (shelf.isSongShelf()) {
         item(key = key) {
-            HomeListColumns(
-                title = shelf.title.ifBlank { "Lagu pilihan" },
-                entries = shelf.toEntries(player, ui),
-                onPlayAll = queue.takeIf { it.isNotEmpty() }?.let { tracks ->
-                    { player.playTracks(tracks) }
-                },
-            )
+            Box(motion) {
+                HomeListColumns(
+                    title = shelf.title.ifBlank { "Lagu pilihan" },
+                    entries = shelf.toEntries(player, ui),
+                    onPlayAll = queue.takeIf { it.isNotEmpty() }?.let { tracks ->
+                        { player.playTracks(tracks) }
+                    },
+                )
+            }
         }
     } else {
         item(key = key) {
-            HomeCardRow(
-                title = shelf.title.ifBlank { "Untukmu" },
-                entries = shelf.toEntries(player, ui),
-                chevron = true,
-            )
+            Box(motion) {
+                HomeCardRow(
+                    title = shelf.title.ifBlank { "Untukmu" },
+                    entries = shelf.toEntries(player, ui),
+                    chevron = true,
+                )
+            }
         }
     }
 }

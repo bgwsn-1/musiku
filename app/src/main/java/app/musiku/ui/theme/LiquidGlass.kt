@@ -38,6 +38,13 @@ import kotlin.math.sin
 val LocalGlassBackdrop = staticCompositionLocalOf<LayerBackdrop?> { null }
 
 /**
+ * True while a screen transition is running. Glass then keeps replaying the capture it already
+ * has instead of re-blurring the backdrop every frame — the capture is the expensive half of the
+ * effect, and during a 300ms slide the stale blur is invisible next to the motion.
+ */
+val LocalGlassFrozen = staticCompositionLocalOf<() -> Boolean> { { false } }
+
+/**
  * Liquid glass, exactly as the Convx client builds it.
  *
  * `drawBackdrop` (Kyant0/backdrop 2.0.x, vendored under `app.musiku.ui.glass.backdrop`) captures the
@@ -67,6 +74,7 @@ fun Modifier.liquidGlass(
     val dark = Tok.IsDark
     val lowDevice = LocalLowDevice.current
     val backdrop = LocalGlassBackdrop.current
+    val frozen = LocalGlassFrozen.current
 
     // GlassTintTokens: dark is a white lift, light is a slightly darker veil.
     val base = if (dark) Color(0xFF171717) else Color(0xFFF5F5F7)
@@ -116,6 +124,7 @@ fun Modifier.liquidGlass(
             drawRect(base.copy(alpha = baseAlpha))
             if (neutralTint.alpha > 0f) drawRect(neutralTint)
         },
+        frozen = frozen,
     ).outerDarkRim(
         shape = shape,
         width = DarkRimWidth,

@@ -27,6 +27,7 @@ import java.io.IOException
  * Queue items carry `musiku://track/<videoId>`; the URL is resolved lazily when ExoPlayer
  * actually opens the item, so a long queue never resolves hundreds of streams up front.
  */
+@OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
