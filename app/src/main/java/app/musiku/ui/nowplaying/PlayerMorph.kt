@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import app.musiku.ui.LocalApp
 import app.musiku.ui.components.Artwork
 import app.musiku.ui.components.MiniPlayerBody
+import app.musiku.ui.components.miniExtras
 import app.musiku.ui.theme.Tok
 import kotlin.math.roundToInt
 import kotlin.math.tanh
@@ -373,6 +374,9 @@ private fun PillContentOnCard(progress: Animatable<Float, AnimationVector1D>) {
             playing = ps.playing,
             fraction = if (ps.durationSec > 0f) (pos / ps.durationSec).coerceIn(0f, 1f) else 0f,
             interactive = false,
+            // Match the slot the pill was captured from: inline it is 60dp with Next collapsed.
+            height = heightDp,
+            extras = miniExtras(widthDp),
             artSlot = { Box(Modifier.size(44.dp)) },
         )
     }

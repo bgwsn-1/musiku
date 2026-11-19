@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -64,10 +65,10 @@ import app.musiku.data.dismissUpdate
 import app.musiku.data.dismissedUpdateVersion
 import app.musiku.data.openInBrowser
 import app.musiku.ui.components.AddToPlaylistSheet
-import app.musiku.ui.components.BottomTabs
 import app.musiku.ui.components.InfoDialog
-import app.musiku.ui.components.MiniPlayer
+import app.musiku.ui.components.MorphDock
 import app.musiku.ui.components.MusikuLoading
+import app.musiku.ui.components.rememberDockScrollConnection
 import app.musiku.ui.components.SpotifyImportDialog
 import app.musiku.ui.components.TrackMenu
 import app.musiku.ui.components.UpdatePrompt
@@ -75,7 +76,6 @@ import app.musiku.ui.nowplaying.NowPlayingActions
 import app.musiku.ui.nowplaying.NowPlayingBackground
 import app.musiku.ui.nowplaying.NowPlayingScreen
 import app.musiku.ui.nowplaying.NowPlayingState
-import app.musiku.ui.nowplaying.LandingEchoShare
 import app.musiku.ui.nowplaying.LocalPlayerMorphProgress
 import app.musiku.ui.nowplaying.PlayerMorph
 import app.musiku.ui.nowplaying.PlayerMorphHost
@@ -112,6 +112,13 @@ fun AppRoot(app: MusikuApp) {
     val route = entry?.destination?.route
     val ps by app.player.ui.collectAsState()
     val scope = rememberCoroutineScope()
+    // Convx's scroll-driven dock: lists anywhere in the NavHost collapse it to the inline row.
+    val dockScroll = rememberDockScrollConnection()
+    // Convx's rememberStickySelectedRoute: the inline circle keeps the last content tab.
+    var lastContentTab by remember { mutableStateOf(Routes.Home) }
+    LaunchedEffect(route) {
+        if (route == Routes.Home || route == Routes.Library) lastContentTab = route
+    }
 
     ui.navigate = { r -> nav.navigate(r) { launchSingleTop = true } }
 
@@ -189,7 +196,13 @@ fun AppRoot(app: MusikuApp) {
         val glassBackdrop = rememberLayerBackdrop()
         Box(Modifier.fillMaxSize().background(Tok.Window)) {
             CompositionLocalProvider(LocalHazeState provides hazeState, LocalGlassBackdrop provides glassBackdrop) {
-                Box(Modifier.fillMaxSize().layerBackdrop(glassBackdrop).haze(hazeState)) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .nestedScroll(dockScroll)
+                        .layerBackdrop(glassBackdrop)
+                        .haze(hazeState),
+                ) {
                     NavHost(
                         navController = nav,
                         startDestination = Routes.Home,
@@ -237,24 +250,26 @@ fun AppRoot(app: MusikuApp) {
                     }
                 }
 
-                // floating dock: mini player (when something is queued) + tab bar.
-                // Settings is a page pushed over the tabs, the way Convx renders it.
-                if (route != Routes.Settings) Column(
-                    Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 12.dp).padding(bottom = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (ps.current != null) MiniPlayer(onOpen = { ui.nowPlayingOpen = true })
-                    BottomTabs(
-                        selected = when {
-                            route in TabRoutes -> route
-                            else -> nav.previousBackStackEntry?.destination?.route?.takeIf { it in TabRoutes } ?: Routes.Home
+                // floating dock: mini player (when something is queued) + tab bar, morphing into
+                // Convx's inline row on scroll-down. Settings is a page pushed over the tabs.
+                if (route != Routes.Settings) {
+                    val selectedTab = when {
+                        route in TabRoutes -> route
+                        else -> nav.previousBackStackEntry?.destination?.route?.takeIf { it in TabRoutes } ?: Routes.Home
+                    }
+                    MorphDock(
+                        selected = selectedTab,
+                        // Convx keeps the inline circle on the last content tab while Search is open.
+                        contentTab = when (selectedTab) {
+                            Routes.Home, Routes.Library -> selectedTab
+                            else -> lastContentTab
                         },
+                        inline = dockScroll.inline,
                         onSelect = { selectTab(nav, it) },
-                        // Convx echoes 40% of the pill's landing dip through the bar, so the dock
-                        // lands as one piece instead of the pill bouncing alone.
-                        modifier = Modifier.graphicsLayer {
-                            translationY = PlayerMorph.landingDipPx * LandingEchoShare
-                        },
+                        onExpand = { dockScroll.expand() },
+                        onOpenPlayer = { ui.nowPlayingOpen = true },
+                        modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+                            .padding(horizontal = 12.dp).padding(bottom = 10.dp),
                     )
                 }
             }
