@@ -71,7 +71,7 @@ val DockInset: Dp
  * iOS "large title" page: a 34sp title scrolls away under a frosted-glass bar while a compact
  * centred title and the trailing control stay fixed at the top.
  *
- * Metrics follow Convx's large title: the compact bar is 52dp of content under the status bar,
+ * Metrics follow the reference large title: the compact bar is 52dp of content under the status bar,
  * and the page list spaces its items by [itemSpacing]. The bar itself is Haze glass — it samples
  * the list behind it instead of painting a solid band — so [contentPadding] keeps the first item
  * out from under it at rest while everything else scrolls through the blur.
@@ -100,6 +100,8 @@ fun LargeTitleList(
     modifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     header: (@Composable () -> Unit)? = null,
+    /** Leading control in the compact bar (a back label, for pushed pages). */
+    leading: (@Composable () -> Unit)? = null,
     /** Trailing controls pinned to the bar's right edge (an avatar, a gear…). */
     actions: (@Composable () -> Unit)? = null,
     titleBottom: Dp = 12.dp,
@@ -210,6 +212,9 @@ fun LargeTitleList(
                 ),
         ) {
             Box(Modifier.fillMaxSize().statusBarsPadding()) {
+                if (leading != null) {
+                    Box(Modifier.align(Alignment.CenterStart)) { leading() }
+                }
                 Text(
                     title,
                     color = Tok.Label1,
