@@ -26,8 +26,8 @@ android {
         // NewPipeExtractor uses java.time, which is why desugaring is on below.
         minSdk = 24
         targetSdk = 34
-        versionCode = 30
-        versionName = "0.30"
+        versionCode = 31
+        versionName = "0.31"
     }
 
     signingConfigs {
