@@ -601,6 +601,8 @@ private fun PhonePlayer(
                     cornerRadius = 12.dp,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp).aspectRatio(1f),
                 )
+                // Same "leftover pane height" weight as the real player, so the meta row docks
+                // directly under the card instead of floating with the transport.
                 Spacer(Modifier.weight(1f))
             }
 
@@ -613,7 +615,6 @@ private fun PhonePlayer(
             MiniTransport(isPlaying)
             Spacer(Modifier.height(23.dp))
             MiniVolume()
-            Spacer(Modifier.weight(1f))
             MiniTabs()
             Spacer(Modifier.height(31.dp))
         }

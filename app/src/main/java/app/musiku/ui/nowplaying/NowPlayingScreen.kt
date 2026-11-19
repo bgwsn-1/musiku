@@ -207,8 +207,9 @@ fun NowPlayingScreen(
                                 )
                             }
                         } else {
-                            // Squared centres its card between two weights, the meta row pinned
-                            // to the foot of the pane.
+                            // Convx centres the squared card between two weights: the first one,
+                            // and the "leftover pane height" spacer right under the pane, which
+                            // is what docks the meta row and the transport beneath the card.
                             Spacer(Modifier.weight(1f))
                             PlayerCoverSlot(
                                 track = track,
@@ -249,6 +250,11 @@ fun NowPlayingScreen(
                         }
                     }
                 }
+
+                // Every weight in the pane belongs to the album slot, so hiding it would collapse
+                // the column to its intrinsic height and strand the tab row mid-page. This is the
+                // spare that keeps it at the foot; the slot itself owns the slack when on screen.
+                if (PlayerSlot.AlbumArt in hiddenSlots) Spacer(Modifier.weight(1f))
 
                 PlayerTabs(state = state, actions = actions, bottomPad = bottomBarPad)
             }
