@@ -232,7 +232,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Musiku — GPL-3.0.", color = Tok.Label2, fontSize = 14.sp, lineHeight = 19.sp)
                     Text(
-                        "(GPL-3.0) dan Flamingo milik Yos-X. " +
+                            "(GPL-3.0) dan Flamingo milik Yos-X. " +
                             "Metadata dari YouTube Music, stream lewat NewPipeExtractor.",
                         color = Tok.Label2, fontSize = 14.sp, lineHeight = 19.sp,
                     )
