@@ -1,6 +1,7 @@
 package app.musiku.ui.components
 
 import app.musiku.ui.theme.MIcons
+import app.musiku.ui.theme.SfIcons
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -336,12 +337,13 @@ private fun PillControl(icon: ImageVector, label: String, interactive: Boolean, 
     }
 }
 
-private data class Tab(val route: String, val label: String, val icon: ImageVector)
+private data class Tab(val route: String, val label: String, val icon: ImageVector, val glyph: Dp)
 
+// Convx's floating bar draws SF Symbols at 32dp (28dp for Search); the glyphs live in SfIcons.
 private val Tabs = listOf(
-    Tab(Routes.Home, "Beranda", MIcons.Home),
-    Tab(Routes.Search, "Cari", MIcons.Search),
-    Tab(Routes.Library, "Pustaka", MIcons.Library),
+    Tab(Routes.Home, "Beranda", SfIcons.HouseFill, 32.dp),
+    Tab(Routes.Search, "Cari", SfIcons.Magnifyingglass, 28.dp),
+    Tab(Routes.Library, "Pustaka", SfIcons.MusicNoteSquareStackFill, 32.dp),
 )
 
 private val SearchTab = Tabs.first { it.route == Routes.Search }
@@ -541,7 +543,7 @@ private fun DockTabItem(
             null,
             tint = if (selected) Tok.Accent else Tok.Label2,
             modifier = Modifier
-                .size(24.dp)
+                .size(tab.glyph)
                 .graphicsLayer { translationY = -6.dp.toPx() * (1f - labelAlpha) },
         )
         Text(
