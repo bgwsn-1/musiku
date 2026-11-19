@@ -7,6 +7,7 @@ import app.musiku.model.ArtistDetail
 import app.musiku.model.BrowseCard
 import app.musiku.model.BrowseShelf
 import app.musiku.model.GenreItem
+import app.musiku.model.HomeChip
 import app.musiku.model.HomeItem
 import app.musiku.model.HomeShelf
 import app.musiku.model.OnlinePlaylist
@@ -418,6 +419,35 @@ class YtMusic(private val http: OkHttpClient) {
         android.util.Log.d("Musiku", "home shelves=" + shelves.size + " " + shelves.joinToString { it.title + "(" + it.items.size + ")" })
         shelves
     }
+
+    // ── home chips ───────────────────────────────────────────────────────────
+
+    /**
+     * YouTube Music's mood filters, read from the header of the guest home page. The shelves on
+     * screen are synthesised, so the chip cloud has to be fetched from the personalised feed
+     * that carries it; only the chips are used from that response.
+     */
+    suspend fun homeChips(): List<HomeChip> = cached("homeChips") {
+        val root = post("browse", JSONObject().put("browseId", "FEmusic_home"))
+        root.collectAll("chipCloudChipRenderer").mapNotNull { c ->
+            val title = c.obj("text").runs().firstOrNull()?.optString("text")?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            val id = c.str("navigationEndpoint.browseEndpoint.browseId") ?: return@mapNotNull null
+            HomeChip(
+                title = title,
+                browseId = id,
+                params = c.str("navigationEndpoint.browseEndpoint.params"),
+            )
+        }.distinctBy { it.browseId + "|" + it.params }
+    }
+
+    /** One chip's feed: the same home browse id with the chip's params. */
+    suspend fun homeChip(chip: HomeChip): List<HomeShelf> =
+        cached("homeChip:${chip.browseId}:${chip.params}") {
+            val body = JSONObject().put("browseId", chip.browseId)
+            if (!chip.params.isNullOrBlank()) body.put("params", chip.params)
+            shelvesFrom(post("browse", body))
+        }
 
     // ── album ────────────────────────────────────────────────────────────────
 

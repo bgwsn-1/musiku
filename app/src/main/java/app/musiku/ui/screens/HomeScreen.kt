@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.musiku.model.HomeChip
 import app.musiku.model.HomeShelf
 import app.musiku.model.Track
 import app.musiku.player.PlayerController
@@ -62,6 +63,7 @@ import app.musiku.ui.LocalUi
 import app.musiku.ui.Routes
 import app.musiku.ui.UiState
 import app.musiku.ui.components.Artwork
+import app.musiku.ui.components.ChipsRow
 import app.musiku.ui.components.Eq
 import app.musiku.ui.components.EmptyState
 import app.musiku.ui.components.LargeTitleList
@@ -105,7 +107,38 @@ fun HomeScreen() {
     val ui = LocalUi.current
     var attempt by remember { mutableIntStateOf(0) }
     val load by rememberLoad(attempt) { app.yt.home() }
+    val chips by rememberLoad(attempt) { app.yt.homeChips() }
     val recent by app.library.recent.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    var selectedChip by remember { mutableStateOf<HomeChip?>(null) }
+    var chipShelves by remember { mutableStateOf<List<HomeShelf>?>(null) }
+    var chipLoading by remember { mutableStateOf(false) }
+
+    // A chip browses its own feed; the synthesised shelves stay in memory so tapping "Semua"
+    // or the same chip again returns instantly.
+    fun loadChip(chip: HomeChip) {
+        selectedChip = chip
+        chipShelves = null
+        chipLoading = true
+        scope.launch {
+            val feed = runCatching { app.yt.homeChip(chip) }.getOrDefault(emptyList())
+            if (selectedChip == chip) {
+                chipShelves = feed
+                chipLoading = false
+            }
+        }
+    }
+
+    fun selectChip(chip: HomeChip?) {
+        if (chip == null || chip == selectedChip) {
+            selectedChip = null
+            chipShelves = null
+            chipLoading = false
+        } else {
+            loadChip(chip)
+        }
+    }
 
     LargeTitleList(
         "Beranda",
@@ -116,22 +149,48 @@ fun HomeScreen() {
         // into Settings.
         actions = { ProfileButton(onClick = { ui.navigate(Routes.Settings) }) },
     ) {
-        when (val l = load) {
-            is Load.Loading -> item(key = "loading") {
-                Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.6f), contentAlignment = Alignment.Center) {
-                    MusikuLoading()
-                }
+        val chipList = when (val c = chips) {
+            is Load.Ok -> c.value
+            else -> emptyList()
+        }
+        if (chipList.isNotEmpty()) {
+            item(key = "chips") {
+                ChipsRow(
+                    chips = listOf<Pair<HomeChip?, String>>(null to "Semua") +
+                        chipList.map { it to it.title },
+                    currentValue = selectedChip,
+                    onValueUpdate = { selectChip(it) },
+                    gutter = HomeGutter,
+                )
             }
-            is Load.Err -> item(key = "error") {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    EmptyState("Beranda belum bisa dimuat", "Cek koneksi, lalu coba lagi. Kamu tetap bisa mencari lagu.")
-                    Text(
-                        "Coba lagi", color = Tok.Accent, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.pressable { attempt++ }.padding(12.dp),
-                    )
-                }
+        }
+
+        val chip = selectedChip
+        when {
+            chip != null && chipLoading -> item(key = "chip-loading") {
+                Box(
+                    Modifier.fillMaxWidth().height(240.dp),
+                    contentAlignment = Alignment.Center,
+                ) { MusikuLoading() }
             }
-            is Load.Ok -> homeFeed(l.value, recent, app.player, ui)
+            chip != null -> chipFeed(chipShelves.orEmpty(), app.player, ui) { loadChip(chip) }
+            else -> when (val l = load) {
+                is Load.Loading -> item(key = "loading") {
+                    Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.6f), contentAlignment = Alignment.Center) {
+                        MusikuLoading()
+                    }
+                }
+                is Load.Err -> item(key = "error") {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        EmptyState("Beranda belum bisa dimuat", "Cek koneksi, lalu coba lagi. Kamu tetap bisa mencari lagu.")
+                        Text(
+                            "Coba lagi", color = Tok.Accent, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.pressable { attempt++ }.padding(12.dp),
+                        )
+                    }
+                }
+                is Load.Ok -> homeFeed(l.value, recent, app.player, ui)
+            }
         }
     }
 }
@@ -226,27 +285,7 @@ private fun LazyListScope.homeFeed(
 
     shelves.forEachIndexed { index, shelf ->
         if (shelf.hero) return@forEachIndexed
-        val key = "shelf-$index"
-        val queue = shelf.items.mapNotNull { it.toTrack() }
-        if (shelf.isSongShelf()) {
-            item(key = key) {
-                HomeListColumns(
-                    title = shelf.title.ifBlank { "Lagu pilihan" },
-                    entries = shelf.toEntries(player, ui),
-                    onPlayAll = queue.takeIf { it.isNotEmpty() }?.let { tracks ->
-                        { player.playTracks(tracks) }
-                    },
-                )
-            }
-        } else {
-            item(key = key) {
-                HomeCardRow(
-                    title = shelf.title.ifBlank { "Untukmu" },
-                    entries = shelf.toEntries(player, ui),
-                    chevron = true,
-                )
-            }
-        }
+        homeShelf("shelf-$index", shelf, player, ui)
     }
 
     item(key = "footer") {
@@ -255,6 +294,62 @@ private fun LazyListScope.homeFeed(
             color = Tok.Label3, fontSize = 13.sp, lineHeight = 18.sp,
             modifier = Modifier.padding(horizontal = HomeGutter, vertical = 8.dp),
         )
+    }
+}
+
+/**
+ * A chip's feed: the same shelf renderers Home uses, without the Top Picks rail and the
+ * recently-played row that only belong to the unfiltered page.
+ */
+private fun LazyListScope.chipFeed(
+    shelves: List<HomeShelf>,
+    player: PlayerController,
+    ui: UiState,
+    onRetry: () -> Unit,
+) {
+    if (shelves.isEmpty()) {
+        item(key = "chip-empty") {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                EmptyState("Filter ini belum bisa dimuat", "Cek koneksi, lalu coba lagi.")
+                Text(
+                    "Coba lagi", color = Tok.Accent, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.pressable { onRetry() }.padding(12.dp),
+                )
+            }
+        }
+        return
+    }
+    shelves.forEachIndexed { index, shelf ->
+        homeShelf("chip-shelf-$index", shelf, player, ui)
+    }
+}
+
+/** Song shelves of eight or more become list columns; everything else draws as cards. */
+private fun LazyListScope.homeShelf(
+    key: String,
+    shelf: HomeShelf,
+    player: PlayerController,
+    ui: UiState,
+) {
+    val queue = shelf.items.mapNotNull { it.toTrack() }
+    if (shelf.isSongShelf()) {
+        item(key = key) {
+            HomeListColumns(
+                title = shelf.title.ifBlank { "Lagu pilihan" },
+                entries = shelf.toEntries(player, ui),
+                onPlayAll = queue.takeIf { it.isNotEmpty() }?.let { tracks ->
+                    { player.playTracks(tracks) }
+                },
+            )
+        }
+    } else {
+        item(key = key) {
+            HomeCardRow(
+                title = shelf.title.ifBlank { "Untukmu" },
+                entries = shelf.toEntries(player, ui),
+                chevron = true,
+            )
+        }
     }
 }
 

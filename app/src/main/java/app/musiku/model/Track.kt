@@ -89,6 +89,16 @@ data class HomeItem(
 /** [hero] marks the shelf Home draws as Convx's tall Top Picks rail instead of a row of cards. */
 data class HomeShelf(val title: String, val items: List<HomeItem>, val hero: Boolean = false)
 
+/**
+ * One mood filter of YouTube Music's home chip cloud. Every chip browses the same page id
+ * and is told apart by [params], so both have to travel with it.
+ */
+data class HomeChip(
+    val title: String,
+    val browseId: String,
+    val params: String? = null,
+)
+
 /** One yellow/coloured card of YouTube Music's moods & genres grid. */
 data class GenreItem(
     val title: String,
