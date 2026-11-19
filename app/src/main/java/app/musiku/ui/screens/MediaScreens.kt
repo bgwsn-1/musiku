@@ -1,5 +1,7 @@
 package app.musiku.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -47,6 +50,7 @@ import app.musiku.ui.components.BackButton
 import app.musiku.ui.components.DockInset
 import app.musiku.ui.components.EmptyState
 import app.musiku.ui.components.GridCard
+import app.musiku.ui.components.HeroZoom
 import app.musiku.ui.components.Load
 import app.musiku.ui.components.MusikuLoading
 import app.musiku.ui.components.SectionTitle
@@ -54,6 +58,8 @@ import app.musiku.ui.components.Shelf
 import app.musiku.ui.components.TextPromptDialog
 import app.musiku.ui.components.pressable
 import app.musiku.ui.components.TrackRow
+import app.musiku.ui.components.heroPullZoom
+import app.musiku.ui.components.rememberHeroZoom
 import app.musiku.ui.components.rememberLoad
 import app.musiku.ui.theme.Tok
 
@@ -74,6 +80,7 @@ private fun MediaHeader(
     kind: String,
     title: String,
     meta: String?,
+    zoom: HeroZoom,
     round: Boolean = false,
     actions: @Composable () -> Unit,
 ) {
@@ -81,7 +88,16 @@ private fun MediaHeader(
         Backdrop(art)
         Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 72.dp, start = 16.dp, end = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val shape = if (round) CircleShape else RoundedCornerShape(20.dp)
-            Artwork(art, Modifier.size(208.dp).shadow(16.dp, shape, ambientColor = Color.Black, spotColor = Color.Black).clip(shape).background(Tok.Fill1))
+            Artwork(
+                art,
+                Modifier.size(208.dp)
+                    // Pulled past the top the list translates with the rubber band and the hero
+                    // grows in the same layer, so nothing below re-lays-out while it scales.
+                    .graphicsLayer { scaleX = zoom.scale; scaleY = zoom.scale }
+                    .shadow(16.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
+                    .clip(shape)
+                    .background(Tok.Fill1),
+            )
             Text(kind.uppercase(), color = Tok.Label3, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.84.sp, modifier = Modifier.padding(top = 24.dp))
             Text(title, color = Tok.Label1, fontSize = 28.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.73).sp, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
             if (!meta.isNullOrBlank()) Text(meta, color = Tok.Label2, fontSize = 15.sp, lineHeight = 19.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
@@ -90,10 +106,15 @@ private fun MediaHeader(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DetailFrame(onBack: () -> Unit, content: @Composable BoxScope.() -> Unit) {
     Box(Modifier.fillMaxSize()) {
-        content()
+        // The hero pull owns the top edge; Convx disables the ambient overscroll for these lists,
+        // and without this the platform stretch would fight the rubber band on the way back.
+        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+            content()
+        }
         BackButton(onBack)
     }
 }
@@ -103,6 +124,7 @@ fun AlbumScreen(id: String, onBack: () -> Unit) {
     val app = LocalApp.current
     var attempt by remember { mutableIntStateOf(0) }
     val load by rememberLoad(id to attempt) { app.yt.album(id) }
+    val heroZoom = rememberHeroZoom()
     DetailFrame(onBack) {
         when (val l = load) {
             is Load.Loading -> Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) {
@@ -111,11 +133,15 @@ fun AlbumScreen(id: String, onBack: () -> Unit) {
             is Load.Err -> EmptyState("Album tidak ditemukan", "Mungkin sudah dihapus atau koneksi bermasalah.", Modifier.statusBarsPadding().padding(top = 80.dp))
             is Load.Ok -> {
                 val a = l.value
-                LazyColumn(contentPadding = PaddingValues(bottom = DockInset)) {
+                LazyColumn(
+                    contentPadding = PaddingValues(bottom = DockInset),
+                    modifier = Modifier.heroPullZoom(heroZoom),
+                ) {
                     item {
                         MediaHeader(
                             a.thumbs, "Album", a.title,
                             listOfNotNull(a.artist, a.year, if (a.tracks.isNotEmpty()) "${a.tracks.size} lagu" else null, a.durationLabel).joinToString(" · "),
+                            zoom = heroZoom,
                         ) {
                             PlayShuffleRow(a.tracks)
                         }
@@ -135,6 +161,7 @@ fun ArtistScreen(id: String, onBack: () -> Unit) {
     val app = LocalApp.current
     val ui = LocalUi.current
     val load by rememberLoad(id) { app.yt.artist(id) }
+    val heroZoom = rememberHeroZoom()
     DetailFrame(onBack) {
         when (val l = load) {
             is Load.Loading -> Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) {
@@ -143,11 +170,15 @@ fun ArtistScreen(id: String, onBack: () -> Unit) {
             is Load.Err -> EmptyState("Artis tidak ditemukan", "Mungkin sudah dihapus atau koneksi bermasalah.", Modifier.statusBarsPadding().padding(top = 80.dp))
             is Load.Ok -> {
                 val a = l.value
-                LazyColumn(contentPadding = PaddingValues(bottom = DockInset)) {
+                LazyColumn(
+                    contentPadding = PaddingValues(bottom = DockInset),
+                    modifier = Modifier.heroPullZoom(heroZoom),
+                ) {
                     item {
                         MediaHeader(
                             a.avatar ?: a.banner, "Artis", a.name,
                             listOfNotNull(a.monthlyListeners?.let { "$it pendengar bulanan" }, a.subscribers?.let { "$it pelanggan" }).joinToString(" · "),
+                            zoom = heroZoom,
                             round = true,
                         ) { PlayShuffleRow(a.topSongs) }
                     }
@@ -177,12 +208,16 @@ fun PlaylistScreen(id: String, onBack: () -> Unit) {
     val pl = playlists.firstOrNull { it.id == id }
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    val heroZoom = rememberHeroZoom()
 
     DetailFrame(onBack) {
         if (pl == null) {
             EmptyState("Playlist tidak ditemukan", "Mungkin sudah dihapus.", Modifier.statusBarsPadding().padding(top = 80.dp))
         } else {
-            LazyColumn(contentPadding = PaddingValues(bottom = DockInset)) {
+            LazyColumn(
+                contentPadding = PaddingValues(bottom = DockInset),
+                modifier = Modifier.heroPullZoom(heroZoom),
+            ) {
                 item {
                     MediaHeader(
                         pl.tracks.firstOrNull()?.thumbs,
@@ -192,6 +227,7 @@ fun PlaylistScreen(id: String, onBack: () -> Unit) {
                             if (pl.source == "spotify") "Spotify" else null,
                             "${pl.tracks.size} lagu",
                         ).joinToString(" · "),
+                        zoom = heroZoom,
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             PlayShuffleRow(pl.tracks)
@@ -251,17 +287,22 @@ private fun Modifier.androidxClickable(onClick: () -> Unit): Modifier = this.the
 fun OnlinePlaylistScreen(id: String, onBack: () -> Unit) {
     val app = LocalApp.current
     val load by rememberLoad(id) { app.yt.playlist(id) }
+    val heroZoom = rememberHeroZoom()
     DetailFrame(onBack) {
         when (val l = load) {
             is Load.Loading -> Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) { MusikuLoading() }
             is Load.Err -> EmptyState("Playlist tidak bisa dimuat", "Cek koneksi internet lalu coba lagi.", Modifier.statusBarsPadding().padding(top = 80.dp))
             is Load.Ok -> {
                 val p = l.value
-                LazyColumn(contentPadding = PaddingValues(bottom = DockInset)) {
+                LazyColumn(
+                    contentPadding = PaddingValues(bottom = DockInset),
+                    modifier = Modifier.heroPullZoom(heroZoom),
+                ) {
                     item {
                         MediaHeader(
                             p.thumbs, "Playlist", p.title,
                             listOfNotNull(p.subtitle, if (p.tracks.isNotEmpty()) "${p.tracks.size} lagu" else null).joinToString(" · "),
+                            zoom = heroZoom,
                         ) {
                             PlayShuffleRow(p.tracks)
                         }

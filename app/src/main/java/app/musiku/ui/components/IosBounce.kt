@@ -208,7 +208,7 @@ private class ConvxBounce(private val scope: CoroutineScope) {
  * UIKit's rubber band constant, and Convx's curve: the band follows at 0.55 of the finger's travel
  * at first and gets stiffer as the pull grows, approaching container / 0.55 without passing it.
  */
-private fun rubberBand(rawDistance: Float, containerPx: Float): Float {
+internal fun rubberBand(rawDistance: Float, containerPx: Float): Float {
     val dim = if (containerPx > 0f) containerPx else FallbackContainerPx
     val d = abs(rawDistance)
     val banded = (1f - 1f / (d * RubberBandConstant / dim + 1f)) * dim / RubberBandConstant
@@ -216,11 +216,11 @@ private fun rubberBand(rawDistance: Float, containerPx: Float): Float {
 }
 
 /** Clamps the leftover fling velocity that seeds the return spring. */
-private fun bounceSeedVelocity(leftoverVelocity: Float): Float =
+internal fun bounceSeedVelocity(leftoverVelocity: Float): Float =
     (leftoverVelocity * FlingBounceScale).coerceIn(-MaxBounceVelocity, MaxBounceVelocity)
 
 /** Convx's return springs: 247 while a drag is released, 130 for a fast fling into the edge. */
-private fun bounceStiffnessFor(seedVelocity: Float): Float =
+internal fun bounceStiffnessFor(seedVelocity: Float): Float =
     if (abs(seedVelocity) > HighVelocityThreshold) {
         HighVelocityBounceStiffness
     } else {
