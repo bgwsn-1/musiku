@@ -186,6 +186,16 @@ fun SettingsScreen(onBack: () -> Unit) {
                     )
                     SettingsDivider()
                     SettingsRow(
+                        icon = MIcons.User,
+                        tint = SysGreen,
+                        title = "Profil GitHub",
+                        subtitle = "github.com/${UpdateSource.Repo.substringBefore('/')}",
+                        onClick = {
+                            openInBrowser(ctx, "https://github.com/${UpdateSource.Repo.substringBefore('/')}")
+                        },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
                         icon = MIcons.Music,
                         tint = SysIndigo,
                         title = "Lisensi",
