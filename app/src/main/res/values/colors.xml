@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Light (default): matches globals.css :root window colour. -->
+    <!-- Default window colour. -->
     <color name="window_bg">#F2F2F7</color>
 
-    <!-- Adaptive icon background: sampled from the corner of the icon artwork, so the tile
-         edge blends with the image even where a launcher's parallax reveals it. -->
-    <color name="ic_launcher_background">#0E1119</color>
+    <!-- Adaptive icon background matches the launcher artwork so parallax edges stay seamless. -->
+    <color name="ic_launcher_background">#000000</color>
 </resources>
