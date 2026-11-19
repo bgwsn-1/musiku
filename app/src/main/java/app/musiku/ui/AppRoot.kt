@@ -85,6 +85,7 @@ import app.musiku.ui.nowplaying.playerBackgroundAlpha
 import app.musiku.ui.nowplaying.playerContentAlpha
 import app.musiku.ui.screens.AlbumScreen
 import app.musiku.ui.screens.ArtistScreen
+import app.musiku.ui.screens.ExploreScreen
 import app.musiku.ui.screens.GenreScreen
 import app.musiku.ui.screens.HomeScreen
 import app.musiku.ui.screens.LibraryScreen
@@ -93,6 +94,8 @@ import app.musiku.ui.screens.LyricsPanel
 import app.musiku.ui.screens.OnlinePlaylistScreen
 import app.musiku.ui.screens.PlaylistScreen
 import app.musiku.ui.screens.QueuePanel
+import app.musiku.ui.screens.RadioScreen
+import app.musiku.ui.screens.RadioStationScreen
 import app.musiku.ui.screens.SearchScreen
 import app.musiku.ui.screens.activeLyricIndex
 import app.musiku.ui.screens.rememberLyrics
@@ -105,7 +108,7 @@ import app.musiku.ui.glass.backdrop.backdrops.layerBackdrop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val TabRoutes = setOf(Routes.Home, Routes.Search, Routes.Library)
+private val TabRoutes = setOf(Routes.Home, Routes.Search, Routes.Radio, Routes.Library, Routes.Explore)
 
 @Composable
 fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
@@ -120,7 +123,9 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
     // Convx's rememberStickySelectedRoute: the inline circle keeps the last content tab.
     var lastContentTab by remember { mutableStateOf(Routes.Home) }
     LaunchedEffect(route) {
-        if (route == Routes.Home || route == Routes.Library) lastContentTab = route
+        if (route == Routes.Home || route == Routes.Radio || route == Routes.Library || route == Routes.Explore) {
+            lastContentTab = route
+        }
     }
 
     ui.navigate = { r -> nav.navigate(r) { launchSingleTop = true } }
@@ -235,7 +240,9 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                     ) {
                         composable(Routes.Home) { HomeScreen() }
                         composable(Routes.Search) { SearchScreen() }
+                        composable(Routes.Radio) { RadioScreen() }
                         composable(Routes.Library) { LibraryScreen() }
+                        composable(Routes.Explore) { ExploreScreen() }
                         composable(Routes.Settings) {
                             SettingsScreen(onBack = { nav.popBackStack() })
                         }
@@ -269,6 +276,23 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                                 onBack = { nav.popBackStack() },
                             )
                         }
+                        composable(
+                            "radio_station/{seedId}?title={title}&artist={artist}&thumbnail={thumbnail}",
+                            listOf(
+                                navArgument("seedId") { type = NavType.StringType },
+                                navArgument("title") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("artist") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("thumbnail") { type = NavType.StringType; nullable = true; defaultValue = null },
+                            ),
+                        ) {
+                            RadioStationScreen(
+                                seedId = android.net.Uri.decode(it.arguments?.getString("seedId").orEmpty()),
+                                seedTitle = android.net.Uri.decode(it.arguments?.getString("title").orEmpty()),
+                                seedArtist = android.net.Uri.decode(it.arguments?.getString("artist").orEmpty()),
+                                seedThumbnail = android.net.Uri.decode(it.arguments?.getString("thumbnail").orEmpty()),
+                                onBack = { nav.popBackStack() },
+                            )
+                        }
                     }
                 }
 
@@ -283,7 +307,7 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                         selected = selectedTab,
                         // Convx keeps the inline circle on the last content tab while Search is open.
                         contentTab = when (selectedTab) {
-                            Routes.Home, Routes.Library -> selectedTab
+                            Routes.Home, Routes.Radio, Routes.Library, Routes.Explore -> selectedTab
                             else -> lastContentTab
                         },
                         inline = dockScroll.inline,

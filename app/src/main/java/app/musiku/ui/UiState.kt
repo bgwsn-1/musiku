@@ -45,7 +45,9 @@ val LocalUi = compositionLocalOf<UiState> { error("UiState not provided") }
 object Routes {
     const val Home = "home"
     const val Search = "search"
+    const val Radio = "radio"
     const val Library = "library"
+    const val Explore = "explore"
     const val Settings = "settings"
     fun album(id: String) = "album/$id"
     fun artist(id: String) = "artist/$id"
@@ -53,4 +55,9 @@ object Routes {
     fun genre(id: String, params: String, title: String) =
         "genre/${android.net.Uri.encode(id)}/${android.net.Uri.encode(params)}/${android.net.Uri.encode(title)}"
     fun onlinePlaylist(id: String) = "oplaylist/${android.net.Uri.encode(id)}"
+    fun radioStation(seedId: String, title: String, artist: String, thumbnail: String) =
+        "radio_station/${android.net.Uri.encode(seedId)}" +
+            "?title=${android.net.Uri.encode(title)}" +
+            "&artist=${android.net.Uri.encode(artist)}" +
+            "&thumbnail=${android.net.Uri.encode(thumbnail)}"
 }

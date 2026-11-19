@@ -2,6 +2,7 @@ package app.musiku.ui.components
 
 import app.musiku.ui.theme.MIcons
 import app.musiku.ui.theme.SfIcons
+import app.musiku.ui.theme.SfNavIcons
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.Easing
@@ -369,14 +370,17 @@ private fun PillControl(icon: ImageVector, label: String, interactive: Boolean, 
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector, val glyph: Dp)
 
-// Convx's floating bar draws SF Symbols at 32dp (28dp for Search); the glyphs live in SfIcons.
+// Convx's floating bar draws SF Symbols at 32dp (28dp for Search/Explore); glyphs come from bundled SF Symbols.
 private val Tabs = listOf(
     Tab(Routes.Home, "Beranda", SfIcons.HouseFill, 32.dp),
     Tab(Routes.Search, "Cari", SfIcons.Magnifyingglass, 28.dp),
+    Tab(Routes.Radio, "Radio", SfNavIcons.DotRadiowavesLeftAndRight, 32.dp),
     Tab(Routes.Library, "Pustaka", SfIcons.MusicNoteSquareStackFill, 32.dp),
+    Tab(Routes.Explore, "Jelajahi", SfNavIcons.SquareGrid2x2Fill, 28.dp),
 )
 
-private val SearchTab = Tabs.first { it.route == Routes.Search }
+private val SearchTabIndex = 1
+private val SearchTab = Tabs[SearchTabIndex]
 
 /**
  * Convx's floating dock: the mini player above the full tab bar when expanded, one inline row of
@@ -448,8 +452,7 @@ fun MorphDock(
     val labelAlpha = (1f - travel).coerceIn(0f, 1f)
     val thumbAlpha = (1f - travel * 2f).coerceIn(0f, 1f)
     val selectedIndex = Tabs.indexOfFirst { it.route == selected }.coerceAtLeast(0)
-    val contentIndex = Tabs.indexOfFirst { it.route == contentTab }.coerceAtLeast(0)
-    val otherContent = Tabs.indices.first { it != 1 && it != contentIndex }
+    val contentIndex = Tabs.indexOfFirst { it.route == contentTab }.takeIf { it >= 0 } ?: 0
 
     // Convx keeps the puck on the last user-chosen tab and only moves it when navigation or a
     // finished drag changes the selection.
@@ -480,10 +483,9 @@ fun MorphDock(
             lerp(width - DockInlineCircle / 2, barX + DockInlineCircle + DockGap + DockInlineCircle / 2, travel)
         }
         val itemWidth = lerp(expandedItem, DockInlineCircle, travel)
-        val searchCenter = lerp(center(1), searchTarget, travel)
+        val searchCenter = lerp(center(SearchTabIndex), searchTarget, travel)
         val contentCenter = lerp(center(contentIndex), leftCenter, travel)
-        val otherCenter = lerp(center(otherContent), leftCenter, travel)
-        val otherAlpha = (1f - travel * 1.6f).coerceIn(0f, 1f)
+        val hiddenAlpha = (1f - travel * 1.6f).coerceIn(0f, 1f)
 
         // Convx nudges the whole pill a few dp in the drag direction, eased and clamped, so a drag
         // feels like tugging the bar instead of sliding a puck inside a static shell.
@@ -601,9 +603,10 @@ fun MorphDock(
                     .then(interactiveHighlight.modifier),
             ) {
                 Tabs.forEachIndexed { index, tab ->
-                    if (index == 1) return@forEachIndexed
-                    val target = if (index == contentIndex) contentCenter else otherCenter
-                    val alpha = if (index == contentIndex) 1f else otherAlpha
+                    if (index == SearchTabIndex) return@forEachIndexed
+                    val isContent = index == contentIndex
+                    val target = if (isContent) contentCenter else lerp(center(index), leftCenter, travel)
+                    val alpha = if (isContent) 1f else hiddenAlpha
                     Box(
                         Modifier
                             .offset(x = target - barX - itemWidth / 2)
