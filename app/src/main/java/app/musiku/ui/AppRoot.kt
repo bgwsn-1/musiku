@@ -57,6 +57,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.musiku.MusikuApp
+import app.musiku.data.ApkUpdater
+import app.musiku.data.UpdateDownload
 import app.musiku.data.UpdateInfo
 import app.musiku.data.checkForUpdate
 import app.musiku.data.dismissUpdate
@@ -145,6 +147,14 @@ fun AppRoot(app: MusikuApp) {
     val ctx = LocalContext.current
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
     var updateVisible by remember { mutableStateOf(false) }
+    var updateDownload by remember { mutableStateOf(UpdateDownload()) }
+    // Reuse an APK that a previous prompt already downloaded for this version.
+    LaunchedEffect(update) {
+        val info = update ?: return@LaunchedEffect
+        updateDownload = ApkUpdater.cached(ctx, info.version)
+            ?.let { UpdateDownload(file = it) }
+            ?: UpdateDownload()
+    }
     val versionName = remember(ctx) {
         runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
             .getOrNull().orEmpty()
@@ -295,9 +305,57 @@ fun AppRoot(app: MusikuApp) {
                         info = info,
                         current = versionName,
                         haze = hazeState,
+                        download = updateDownload,
                         onDownload = {
-                            openInBrowser(ctx, info.apkUrl ?: info.pageUrl)
-                            updateVisible = false
+                            val apkUrl = info.apkUrl
+                            val ready = updateDownload.file
+                            when {
+                                updateDownload.running -> Unit
+                                apkUrl == null -> {
+                                    // Releases without an APK asset still need the browser.
+                                    openInBrowser(ctx, info.pageUrl)
+                                    updateVisible = false
+                                }
+                                ready != null && ready.exists() -> {
+                                    if (ApkUpdater.canInstall(ctx)) {
+                                        runCatching { ApkUpdater.install(ctx, ready) }
+                                            .onFailure { toast = "Tidak bisa membuka pemasang" }
+                                    } else {
+                                        updateDownload = updateDownload.copy(needsPermission = true)
+                                        runCatching { ApkUpdater.openInstallPermission(ctx) }
+                                    }
+                                }
+                                else -> scope.launch {
+                                    updateDownload = UpdateDownload(running = true, progress = 0f)
+                                    val file = runCatching {
+                                        ApkUpdater.download(ctx, apkUrl, info.version) { p ->
+                                            updateDownload = UpdateDownload(running = true, progress = p)
+                                        }
+                                    }.getOrElse { e ->
+                                        updateDownload = UpdateDownload(
+                                            error = e.message ?: "koneksi terputus",
+                                        )
+                                        return@launch
+                                    }
+                                    if (ApkUpdater.canInstall(ctx)) {
+                                        updateDownload = UpdateDownload(file = file)
+                                        runCatching { ApkUpdater.install(ctx, file) }
+                                            .onFailure {
+                                                toast = "Tidak bisa membuka pemasang"
+                                                updateDownload = UpdateDownload(
+                                                    file = file,
+                                                    error = "pemasang tidak tersedia",
+                                                )
+                                            }
+                                    } else {
+                                        updateDownload = UpdateDownload(
+                                            file = file,
+                                            needsPermission = true,
+                                        )
+                                        runCatching { ApkUpdater.openInstallPermission(ctx) }
+                                    }
+                                }
+                            }
                         },
                         onDetails = { openInBrowser(ctx, info.pageUrl) },
                         onDismiss = {

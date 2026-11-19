@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.musiku.data.UpdateDownload
 import app.musiku.data.UpdateInfo
 import app.musiku.ui.theme.MIcons
 import app.musiku.ui.theme.Tok
@@ -38,6 +40,7 @@ fun UpdatePrompt(
     info: UpdateInfo,
     current: String,
     haze: HazeState,
+    download: UpdateDownload,
     onDownload: () -> Unit,
     onDetails: () -> Unit,
     onDismiss: () -> Unit,
@@ -88,17 +91,64 @@ fun UpdatePrompt(
             )
         }
 
+        // In-app updater: download runs here, then the system installer is opened. Android asks
+        // once per app for "install unknown apps"; until it is granted we show the way in.
+        if (download.running) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(CircleShape)
+                    .background(Tok.Fill1),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(download.progress ?: 0.15f)
+                        .fillMaxHeight()
+                        .background(Tok.Accent),
+                )
+            }
+        }
+        if (download.needsPermission) {
+            Text(
+                "Izinkan Musiku memasang aplikasi di pengaturan, lalu kembali dan tekan Pasang.",
+                color = Tok.Label2,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+        }
+        download.error?.let { message ->
+            Text(
+                "Gagal mengunduh: $message",
+                color = Tok.Accent,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+        }
+
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(
                 Modifier
                     .height(40.dp)
                     .clip(CircleShape)
-                    .background(Tok.AccentFill)
-                    .pressable { onDownload() }
+                    .background(if (download.running) Tok.Fill1 else Tok.AccentFill)
+                    .pressable { if (!download.running) onDownload() }
                     .padding(horizontal = 20.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Unduh", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    when {
+                        download.running -> download.progress
+                            ?.let { "Mengunduh ${(it * 100).toInt()}%" }
+                            ?: "Mengunduh…"
+                        download.file != null -> "Pasang"
+                        download.error != null -> "Coba lagi"
+                        else -> "Unduh"
+                    },
+                    color = if (download.running) Tok.Label2 else Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             Box(
                 Modifier

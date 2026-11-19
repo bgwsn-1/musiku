@@ -32,6 +32,20 @@ data class UpdateInfo(
     val pageUrl: String,
 )
 
+/**
+ * State of the in-app update download, owned by `AppRoot` and drawn by the update card.
+ * [file] is the finished APK; [needsPermission] means Android still has to be told that
+ * Musiku may install packages.
+ */
+data class UpdateDownload(
+    val running: Boolean = false,
+    /** 0..1 while downloading; null when the server does not report a size. */
+    val progress: Float? = null,
+    val file: java.io.File? = null,
+    val needsPermission: Boolean = false,
+    val error: String? = null,
+)
+
 private val Context.updateStore by preferencesDataStore(name = "updates")
 private val kDismissed = stringPreferencesKey("dismissedVersion")
 
