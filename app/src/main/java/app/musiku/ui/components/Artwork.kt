@@ -12,12 +12,18 @@ import coil.compose.AsyncImage
 
 /** Cover art. No URL (or the demo) → a soft gradient with a few translucent circles. */
 @Composable
-fun Artwork(url: String?, modifier: Modifier = Modifier, contentDescription: String? = null) {
+fun Artwork(
+    url: String?,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    onError: (() -> Unit)? = null,
+) {
     if (url != null) {
         AsyncImage(
             model = url,
             contentDescription = contentDescription,
             contentScale = ContentScale.Crop,
+            onError = { if (onError != null) onError() },
             modifier = modifier,
         )
     } else {

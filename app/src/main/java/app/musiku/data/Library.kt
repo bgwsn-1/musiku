@@ -60,8 +60,10 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kShuffle = booleanPreferencesKey("shuffle")
     private val kRepeat = intPreferencesKey("repeat")
     private val kSpotifyMatches = stringPreferencesKey("spotifyMatches")
+    private val kBookmarkedArtists = stringPreferencesKey("bookmarkedArtists")
 
     private val _liked = MutableStateFlow<List<Track>>(emptyList())
+    private val _bookmarkedArtists = MutableStateFlow<Set<String>>(emptySet())
     private val _playlists = MutableStateFlow<List<Playlist>>(emptyList())
     private val _recent = MutableStateFlow<List<Track>>(emptyList())
     private val _crossfade = MutableStateFlow(false)
@@ -75,6 +77,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val ready = kotlinx.coroutines.CompletableDeferred<Unit>()
 
     val liked: StateFlow<List<Track>> = _liked
+    val bookmarkedArtists: StateFlow<Set<String>> = _bookmarkedArtists
     val playlists: StateFlow<List<Playlist>> = _playlists
     val recent: StateFlow<List<Track>> = _recent
     val crossfade: StateFlow<Boolean> = _crossfade
@@ -90,6 +93,10 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
         scope.launch {
             val p: Preferences = ctx.store.data.first()
             _liked.value = parseTracks(p[kLiked])
+            _bookmarkedArtists.value = runCatching {
+                val a = JSONArray(p[kBookmarkedArtists] ?: "[]")
+                (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() }.toSet()
+            }.getOrDefault(emptySet())
             _recent.value = parseTracks(p[kRecent])
             _playlists.value = runCatching {
                 val a = JSONArray(p[kPlaylists] ?: "[]")
@@ -126,6 +133,11 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     }
 
     private fun saveLiked() = save { it[kLiked] = _liked.value.toJsonArray().toString() }
+    private fun saveBookmarkedArtists() = save {
+        val a = JSONArray()
+        _bookmarkedArtists.value.forEach(a::put)
+        it[kBookmarkedArtists] = a.toString()
+    }
     private fun saveRecent() = save { it[kRecent] = _recent.value.toJsonArray().toString() }
     private fun savePlaylists() = save { p ->
         val a = JSONArray()
@@ -145,6 +157,13 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     fun toggleLike(t: Track) {
         _liked.value = if (isLiked(t.videoId)) _liked.value.filterNot { it.videoId == t.videoId } else listOf(t) + _liked.value
         saveLiked()
+    }
+
+    fun isArtistBookmarked(id: String) = id in _bookmarkedArtists.value
+
+    fun toggleArtistBookmark(id: String) {
+        _bookmarkedArtists.value = if (id in _bookmarkedArtists.value) _bookmarkedArtists.value - id else _bookmarkedArtists.value + id
+        saveBookmarkedArtists()
     }
 
     // ── recents ──────────────────────────────────────────────────────────────
