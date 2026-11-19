@@ -1,6 +1,8 @@
 package app.musiku.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -59,6 +62,7 @@ import app.musiku.ui.components.Artwork
 import app.musiku.ui.components.DockInset
 import app.musiku.ui.components.EmptyState
 import app.musiku.ui.components.MusikuLoading
+import app.musiku.ui.components.iosBounce
 import app.musiku.ui.components.pressable
 import app.musiku.ui.theme.Tok
 import coil.compose.AsyncImage
@@ -99,6 +103,7 @@ private data class ArtistCard(
     val browseId: String,
 ) : ExploreCardItem
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ExploreScreen() {
     val app = LocalApp.current
@@ -173,20 +178,26 @@ fun ExploreScreen() {
     val hasContent = hero.isNotEmpty() || recommended.isNotEmpty() || newReleases.isNotEmpty() || topSongs.isNotEmpty() || moods.isNotEmpty()
 
     Box(Modifier.fillMaxSize().background(Tok.Window)) {
+        // Match the other pages: the platform's glow/stretch is off and the iOS rubber band owns
+        // the overscroll.
+        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
         when {
             loading -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { MusikuLoading() }
             }
 
             loadFailed && !hasContent -> {
-                LazyColumn(contentPadding = PaddingValues(top = 116.dp, bottom = DockInset)) {
+                LazyColumn(
+                    modifier = Modifier.iosBounce(),
+                    contentPadding = PaddingValues(top = 116.dp, bottom = DockInset),
+                ) {
                     item { EmptyState("Jelajahi belum bisa dimuat", "Cek koneksi internet lalu coba lagi.") }
                 }
             }
 
             else -> {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().iosBounce(),
                     contentPadding = PaddingValues(start = 0.dp, top = 116.dp, bottom = DockInset + 16.dp),
                 ) {
                     item(key = "explore_title") {
@@ -267,6 +278,7 @@ fun ExploreScreen() {
                     }
                 }
             }
+        }
         }
     }
 }

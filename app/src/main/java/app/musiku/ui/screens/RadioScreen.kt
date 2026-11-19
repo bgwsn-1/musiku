@@ -1,5 +1,7 @@
 package app.musiku.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +57,7 @@ import app.musiku.ui.components.Load
 import app.musiku.ui.components.MusikuLoading
 import app.musiku.ui.components.SfIcon
 import app.musiku.ui.components.TrackRow
+import app.musiku.ui.components.iosBounce
 import app.musiku.ui.components.pressable
 import app.musiku.ui.components.rememberLoad
 import app.musiku.ui.theme.SfDetailIcons
@@ -64,6 +68,7 @@ import kotlinx.coroutines.launch
 private val RadioCardMinWidth = 168.dp
 private val RadioGutter = 16.dp
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RadioScreen() {
     val app = LocalApp.current
@@ -85,9 +90,12 @@ fun RadioScreen() {
     }
 
     Box(Modifier.fillMaxSize().background(Tok.Window)) {
+        // Match the other pages: the platform's glow/stretch is off and the iOS rubber band owns
+        // the overscroll.
+        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = RadioCardMinWidth),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().iosBounce(),
             contentPadding = PaddingValues(
                 start = RadioGutter,
                 top = 116.dp,
@@ -170,6 +178,7 @@ fun RadioScreen() {
                     )
                 }
             }
+        }
         }
     }
 }
@@ -254,6 +263,7 @@ private fun RadioStationCard(seed: Track, onClick: () -> Unit, onPlay: () -> Uni
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RadioStationScreen(
     seedId: String,
@@ -286,8 +296,9 @@ fun RadioStationScreen(
     }
 
     Box(Modifier.fillMaxSize().background(Tok.Window)) {
+        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().iosBounce(),
             contentPadding = PaddingValues(bottom = DockInset + 20.dp),
         ) {
             item(key = "radio_station_title") {
@@ -379,6 +390,7 @@ fun RadioStationScreen(
                     }
                 }
             }
+        }
         }
         BackButton(onBack)
     }
