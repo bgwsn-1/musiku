@@ -201,16 +201,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                     )
                     SettingsDivider()
                     SettingsRow(
-                        icon = MIcons.User,
-                        tint = SysGreen,
-                        title = "Profil GitHub",
-                        subtitle = "github.com/${UpdateSource.Repo.substringBefore('/')}",
-                        onClick = {
-                            openInBrowser(ctx, "https://github.com/${UpdateSource.Repo.substringBefore('/')}")
-                        },
-                    )
-                    SettingsDivider()
-                    SettingsRow(
                         icon = MIcons.Music,
                         tint = SysIndigo,
                         title = "Lisensi",
@@ -242,7 +232,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Musiku — GPL-3.0.", color = Tok.Label2, fontSize = 14.sp, lineHeight = 19.sp)
                     Text(
-                        "Desain, gerak dan metrik diadaptasi dari Convx (GPL-3.0) dan Flamingo milik Yos-X. " +
+                        "(GPL-3.0) dan Flamingo milik Yos-X. " +
                             "Metadata dari YouTube Music, stream lewat NewPipeExtractor.",
                         color = Tok.Label2, fontSize = 14.sp, lineHeight = 19.sp,
                     )
