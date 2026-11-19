@@ -33,6 +33,7 @@ import app.musiku.ui.LocalApp
 import app.musiku.ui.LocalUi
 import app.musiku.ui.Routes
 import app.musiku.ui.theme.Tok
+import app.musiku.ui.theme.glassDialogColor
 
 /**
  * Paste-a-link import sheet. One dialog for the whole flow: link → progress → result, so the
@@ -61,7 +62,7 @@ fun SpotifyImportDialog(open: Boolean, onClose: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = { close() },
-        containerColor = Tok.GlassFillStrong,
+        containerColor = glassDialogColor(),
         shape = RoundedCornerShape(26.dp),
         title = {
             Text(

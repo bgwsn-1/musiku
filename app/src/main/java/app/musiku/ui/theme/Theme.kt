@@ -165,6 +165,9 @@ object Tok {
 
     /** Opaque fallback for surfaces that must not be see-through (legacy call sites). */
     val Glass: Color @Composable get() = LocalMusikuColors.current.GlassFillStrong
+
+    /** Flat, fully opaque fill used by low-device mode (dark: black, light: white for legibility). */
+    val SolidGlass: Color @Composable get() = if (IsDark) Color(0xFF000000) else Color(0xFFFFFFFF)
 }
 
 @Composable

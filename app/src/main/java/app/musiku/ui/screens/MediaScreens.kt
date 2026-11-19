@@ -96,6 +96,7 @@ import app.musiku.ui.components.rememberPlaylistAppearance
 import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.SfDetailIcons
 import app.musiku.ui.theme.Tok
+import app.musiku.ui.theme.glassDialogColor
 import kotlinx.coroutines.launch
 
 /** Art-tinted backdrop kept for the album page (not yet ported to the Convx collection header). */
@@ -486,7 +487,7 @@ fun PlaylistScreen(id: String, onBack: () -> Unit) {
             })
             if (confirmDelete) AlertDialog(
                 onDismissRequest = { confirmDelete = false },
-                containerColor = Tok.GlassFillStrong,
+                containerColor = glassDialogColor(),
                 shape = RoundedCornerShape(26.dp),
                 title = { Text("Hapus playlist?", color = Tok.Label1, fontWeight = FontWeight.Bold) },
                 text = { Text("“${pl.name}” akan dihapus dari perangkat ini.", color = Tok.Label2) },

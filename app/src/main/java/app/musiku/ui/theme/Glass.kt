@@ -52,6 +52,7 @@ fun Modifier.glass(
     strong: Boolean = false,
     shadow: Dp = 0.dp,
 ): Modifier {
+    val lowDevice = LocalLowDevice.current
     var m = this
     if (shadow > 0.dp) {
         m = m.shadow(shadow, shape, clip = false, ambientColor = Tok.Shadow, spotColor = Tok.Shadow)
@@ -59,7 +60,7 @@ fun Modifier.glass(
     // Order matters: the clip must wrap hazeChild so the blurred backdrop is rounded, and the fill
     // + edges must come after it so they paint on top of the blur (web: backdrop-filter then bg).
     m = m.clip(shape)
-    if (state != null && !LocalLowDevice.current) {
+    if (state != null && !lowDevice) {
         m = m.hazeChild(
             style = HazeStyle(
                 // Drawn *behind* the blur; the translucent fill above is what the eye reads.
@@ -76,9 +77,12 @@ fun Modifier.glass(
             blurEnabled = true
         }
     }
-    return m
-        .background(if (strong) Tok.GlassFillStrong else Tok.GlassFill)
-        .border(1.dp, glassEdgeBrush(), shape)
+    val fill = if (lowDevice) Tok.SolidGlass else if (strong) Tok.GlassFillStrong else Tok.GlassFill
+    return if (lowDevice) {
+        m.background(fill).border(1.dp, Tok.Hairline, shape)
+    } else {
+        m.background(fill).border(1.dp, glassEdgeBrush(), shape)
+    }
 }
 
 /**
@@ -99,10 +103,19 @@ fun glassEdgeBrush(): Brush = Brush.verticalGradient(
  * the surface stays legible without the blur underneath.
  */
 @Composable
-fun Modifier.glassFallback(shape: Shape, strong: Boolean = false): Modifier =
-    clip(shape)
-        .background(if (strong) Tok.GlassFillStrong else Tok.GlassFill)
-        .border(1.dp, glassEdgeBrush(), shape)
+fun Modifier.glassFallback(shape: Shape, strong: Boolean = false): Modifier {
+    val lowDevice = LocalLowDevice.current
+    val fill = if (lowDevice) Tok.SolidGlass else if (strong) Tok.GlassFillStrong else Tok.GlassFill
+    return if (lowDevice) {
+        clip(shape).background(fill).border(1.dp, Tok.Hairline, shape)
+    } else {
+        clip(shape).background(fill).border(1.dp, glassEdgeBrush(), shape)
+    }
+}
+
+/** Dialog container colour: flat opaque in low-device mode, the web's glass fill otherwise. */
+@Composable
+fun glassDialogColor(): Color = if (LocalLowDevice.current) Tok.SolidGlass else Tok.GlassFillStrong
 
 /**
  * Just the edge highlights, no fill. For surfaces whose fill is already painted by something else

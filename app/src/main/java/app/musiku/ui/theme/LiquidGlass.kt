@@ -65,6 +65,7 @@ fun Modifier.liquidGlass(
     tint: Color? = null,
 ): Modifier {
     val dark = Tok.IsDark
+    val lowDevice = LocalLowDevice.current
     val backdrop = LocalGlassBackdrop.current
 
     // GlassTintTokens: dark is a white lift, light is a slightly darker veil.
@@ -72,12 +73,13 @@ fun Modifier.liquidGlass(
     val baseAlpha = if (dark) 0.15f else 0.40f
     val neutralTint = tint ?: if (dark) Color.Transparent else Color(0xFF3C3C43).copy(alpha = 0.05f)
 
-    // Low-device mode opts out of every captured/lens pass; API 31 falls back here too.
-    if (LocalLowDevice.current || backdrop == null || !isRenderEffectSupported()) {
+    // Low-device mode opts out of every captured/lens pass and paints a solid plate instead;
+    // API 31 falls back here too, but keeps the web's translucent fill.
+    if (lowDevice || backdrop == null || !isRenderEffectSupported()) {
         return clip(shape)
-            .background(base.copy(alpha = baseAlpha))
+            .background(if (lowDevice) Tok.SolidGlass else base.copy(alpha = baseAlpha))
             .then(
-                if (neutralTint.alpha > 0f) {
+                if (!lowDevice && neutralTint.alpha > 0f) {
                     Modifier.background(neutralTint)
                 } else {
                     Modifier

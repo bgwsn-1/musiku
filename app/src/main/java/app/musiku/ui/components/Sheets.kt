@@ -44,6 +44,7 @@ import app.musiku.ui.LocalApp
 import app.musiku.ui.LocalUi
 import app.musiku.ui.Routes
 import app.musiku.ui.theme.Tok
+import app.musiku.ui.theme.glassDialogColor
 import app.musiku.ui.theme.glassEdges
 
 @Composable
@@ -131,7 +132,7 @@ fun TextPromptDialog(
         onDismissRequest = onDismiss,
         // web Dialog: `glass glass-lg rounded-t-[28px] md:rounded-[26px]` — same glass fill, no blur
         // (dialogs are their own window). The scrim and edges come from the shared glass fallback.
-        containerColor = Tok.GlassFillStrong,
+        containerColor = glassDialogColor(),
         shape = shape,
         title = { Text(title, color = Tok.Label1, fontWeight = FontWeight.Bold) },
         text = {
@@ -157,7 +158,7 @@ fun TextPromptDialog(
 fun InfoDialog(track: Track, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Tok.GlassFillStrong,
+        containerColor = glassDialogColor(),
         shape = RoundedCornerShape(26.dp),
         title = { Text("Info lagu", color = Tok.Label1, fontWeight = FontWeight.Bold) },
         text = {

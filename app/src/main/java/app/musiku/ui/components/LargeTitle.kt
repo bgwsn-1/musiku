@@ -198,7 +198,7 @@ fun LargeTitleList(
                 .height(barHeight)
                 .then(
                     if (lowDevice) {
-                        Modifier.background(window)
+                        Modifier.background(Tok.SolidGlass)
                     } else {
                         Modifier
                             .hazeChild(hazeState, style = style) {
