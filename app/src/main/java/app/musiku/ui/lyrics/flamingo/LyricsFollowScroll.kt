@@ -145,12 +145,18 @@ internal suspend fun LazyListState.followLyricLine(itemIndex: Int, animate: Bool
     val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
     var item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
     if (item == null) {
-        scrollToItem(itemIndex, -viewport / 2)
+        // Bring the line into the viewport first, then let the distance below centre it. Scrolling
+        // straight to the centre offset parks the item outside the list's scroll range on the first
+        // lines, so the item never appears and the initial centring silently gives up.
+        scrollToItem(itemIndex, 0)
         withFrameNanos { }
         item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex } ?: return
     }
     val distance = lyricCenterDistance(layoutInfo.viewportStartOffset, layoutInfo.viewportEndOffset, item.offset, item.size)
     if (abs(distance) <= 1f) return
+    // Opening lines cannot reach the centre because there is no content above them yet. Leave them
+    // where they are instead of letting the rubber push against the top edge.
+    if (distance < 0 && !canScrollBackward) return
     when {
         !animate -> scrollBy(distance)
         rubber != null && abs(distance) <= viewport * RUBBER_MAX_VIEWPORT && ValueAnimator.areAnimatorsEnabled() ->

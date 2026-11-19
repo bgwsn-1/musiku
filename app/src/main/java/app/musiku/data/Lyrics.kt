@@ -1,7 +1,6 @@
 package app.musiku.data
 
 import app.musiku.model.LyricLine
-import app.musiku.model.LyricWord
 import app.musiku.model.Lyrics
 import app.musiku.model.Track
 import kotlinx.coroutines.Dispatchers
@@ -13,15 +12,9 @@ import org.json.JSONArray
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
-/** Port of Convx's line LRC parser plus its EnhancedLrc (A2) word-stamp parser. */
+/** Port of `parseLrc` (LyricsPanel.tsx) + the lrclib lookup from lib/music.ts. */
 object LrcParser {
     private val stamp = Regex("\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?]")
-
-    // [00:27.39]<00:27.39>I <00:27.54>been <00:27.74>tryna <00:28.07>call
-    private val a2Line = Regex("""^\[(\d{1,3}):(\d{2})[.:](\d{2,3})](.*)$""")
-    private val a2Word = Regex("""<(\d{1,3}):(\d{2})[.:](\d{2,3})>([^<]*)""")
-    private const val TAIL_MS = 800L
-    private const val MIN_GAP_MS = 4_000L
 
     fun parse(raw: String): List<LyricLine> {
         val out = ArrayList<LyricLine>()
@@ -37,127 +30,6 @@ object LrcParser {
             }
         }
         return out.sortedBy { it.timeSec }
-    }
-
-    /** Null when the file has no word stamps, so the caller can fall back to [parse]. */
-    fun parseEnhanced(raw: String): List<LyricLine>? {
-        val rows = raw.lineSequence()
-            .mapNotNull { a2Line.matchEntire(it.trim()) }
-            .map { m ->
-                Row(
-                    timeMs = a2Stamp(m.groupValues[1], m.groupValues[2], m.groupValues[3]),
-                    words = a2Word.findAll(m.groupValues[4]).toList(),
-                    plain = m.groupValues[4].trim(),
-                )
-            }
-            .sortedBy { it.timeMs }
-            .toList()
-        if (rows.none { it.words.isNotEmpty() }) return null
-
-        return withInstrumentalGaps(rows.mapIndexedNotNull { index, row ->
-            if (row.words.isEmpty()) {
-                val text = decodeEntities(row.plain)
-                if (text.isEmpty()) null else LyricLine(row.timeMs / 1000f, text)
-            } else {
-                // A word runs until the next one starts; the last runs until the next line does.
-                val lineEnd = rows.getOrNull(index + 1)?.timeMs ?: (a2Stamp(row.words.last()) + TAIL_MS)
-                val runs = row.words.mapIndexed { i, w ->
-                    TimedRun(
-                        a2Stamp(w),
-                        row.words.getOrNull(i + 1)?.let(::a2Stamp) ?: lineEnd,
-                        decodeEntities(w.groupValues[4]),
-                    )
-                }
-                val words = wordsFromRuns(runs)
-                if (words.isEmpty()) null else LyricLine(
-                    timeSec = minOf(row.timeMs, words.first().startMs) / 1000f,
-                    text = words.joinToString(" ") { it.text },
-                    words = words,
-                )
-            }
-        })
-    }
-
-    private class Row(val timeMs: Long, val words: List<MatchResult>, val plain: String)
-    private class TimedRun(val startMs: Long, val endMs: Long, val raw: String)
-
-    private fun a2Stamp(m: MatchResult): Long = a2Stamp(m.groupValues[1], m.groupValues[2], m.groupValues[3])
-
-    private fun a2Stamp(minutes: String, seconds: String, fraction: String): Long {
-        val fractionMs = if (fraction.length == 3) fraction.toLong() else fraction.toLong() * 10
-        return minutes.toLong() * 60_000 + seconds.toLong() * 1_000 + fractionMs
-    }
-
-    /** Keeps the raw spacing: a run with no space after it is a syllable of the next word. */
-    private fun wordsFromRuns(runs: List<TimedRun>): List<LyricWord> {
-        val glue = runs.any { it.raw.any(Char::isWhitespace) }
-        val words = ArrayList<LyricWord>()
-        val current = StringBuilder()
-        var start = 0L
-        var end = 0L
-
-        fun flush() {
-            if (current.isNotEmpty()) {
-                words += LyricWord(current.toString(), start, maxOf(start, end))
-                current.setLength(0)
-            }
-        }
-
-        for (run in runs) {
-            val content = run.raw.trim()
-            if (content.isEmpty()) {
-                flush()
-                continue
-            }
-            val joins = glue && current.isNotEmpty() && !run.raw.first().isWhitespace() &&
-                !current.last().isUnspacedScript() && !content.first().isUnspacedScript()
-            if (!joins) flush()
-            if (current.isEmpty()) {
-                start = run.startMs
-                end = run.startMs
-            }
-            current.append(content)
-            end = maxOf(end, run.startMs, run.endMs)
-            if (!glue || run.raw.last().isWhitespace()) flush()
-        }
-        flush()
-        return words
-    }
-
-    /** Scripts written without spaces between words. */
-    private fun Char.isUnspacedScript(): Boolean =
-        this in '\u3400'..'\u9FFF' || this in '\u3040'..'\u30FF' || this in '\u3000'..'\u303F' ||
-            this in '\uFF00'..'\uFFEF' || this in '\u0E00'..'\u0E7F'
-
-    /** SimpMusic serves rich sync HTML-escaped; decode once so words aren't sung literally. */
-    private fun decodeEntities(text: String): String {
-        if ('&' !in text) return text
-        return text
-            .replace(Regex("&#x([0-9a-fA-F]+);")) { it.groupValues[1].toInt(16).toChar().toString() }
-            .replace(Regex("&#(\\d+);")) { it.groupValues[1].toInt().toChar().toString() }
-            .replace("&apos;", "'")
-            .replace("&quot;", "\"")
-            .replace("&nbsp;", " ")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&amp;", "&")
-    }
-
-    /** Marks instrumental stretches with blank lines, as Convx's LyricGaps does. */
-    private fun withInstrumentalGaps(lines: List<LyricLine>): List<LyricLine> {
-        if (lines.isEmpty()) return lines
-        val out = ArrayList<LyricLine>(lines.size + 4)
-        if (lines.first().timeSec * 1000f >= MIN_GAP_MS) out += LyricLine(0f, "")
-        lines.forEachIndexed { index, line ->
-            out += line
-            val words = line.words ?: return@forEachIndexed
-            val end = words.last().endMs
-            val start = words.first().startMs
-            val next = lines.getOrNull(index + 1) ?: return@forEachIndexed
-            val silence = next.timeSec * 1000f - end
-            if (silence >= MIN_GAP_MS && end > start) out += LyricLine(end / 1000f, "")
-        }
-        return out
     }
 }
 
@@ -200,7 +72,7 @@ class LyricsRepo(private val http: OkHttpClient, private val yt: YtMusic) {
                     val plain = b.optString("plainLyrics", "").takeIf { s -> s.isNotBlank() && s != "null" }
                     when {
                         synced != null -> {
-                            val lines = LrcParser.parseEnhanced(synced) ?: LrcParser.parse(synced)
+                            val lines = LrcParser.parse(synced)
                             if (lines.isEmpty()) null else Lyrics(lines = lines, synced = true, source = "lrclib")
                         }
                         plain != null -> Lyrics(plain = plain, source = "lrclib")

@@ -51,22 +51,18 @@ fun FlamingoLyrics(
     lineSpacing: Float = 1.3f,
     isSynced: Boolean = true,
     blur: Boolean = false,
-    /** Flamingo's bright-pass bloom, on by default as in Convx. */
-    glow: Boolean = true,
+    /**
+     * Flamingo's bright-pass bloom. Kept off by default: it is tuned for Convx's near-black
+     * artwork field, and over a pale cover the 4dp + 16dp halos additively lift the whole screen.
+     */
+    glow: Boolean = false,
     isPlaying: Boolean = false,
 ) {
-    // Convx sweeps real per-word stamps when the source has them (A2/TTML); plain LRC falls back
-    // to the length-weighted estimate below.
-    val words = remember(lines) { lines.map { it.timedWords() ?: emptyList() } }
-    val synthetic = remember(lines) { syntheticWords(lines) }
-    val sweep = remember(lines, words, synthetic) {
-        lines.mapIndexed { index, line -> if (line.words.isNullOrEmpty()) synthetic[index] else words[index] }
-    }
-    val wordTimed = remember(lines) { lines.any { !it.words.isNullOrEmpty() } }
-    val entries = remember(lines, sweep) {
+    val words = remember(lines) { syntheticWords(lines) }
+    val entries = remember(lines, words) {
         lines.mapIndexed { index, line ->
-            val at = line.words?.firstOrNull()?.startMs?.toFloat() ?: line.timeSec * 1000f
-            val timed = sweep[index]
+            val at = line.timeSec * 1000f
+            val timed = words[index]
             when {
                 line.text.isBlank() -> listOf(at to "", at to "", at to "")
                 else -> ArrayList<Pair<Float, String>>(timed.size + 2).apply {
@@ -80,8 +76,7 @@ fun FlamingoLyrics(
     }
     val ends = remember(lines) {
         lines.mapIndexed { index, line ->
-            line.words?.lastOrNull()?.endMs?.toFloat()
-                ?: (lines.getOrNull(index + 1)?.timeSec ?: (line.timeSec + 5f)) * 1000f
+            (lines.getOrNull(index + 1)?.timeSec ?: (line.timeSec + 5f)) * 1000f
         }
     }
     val sides = remember(lines) { List(lines.size) { false } }
@@ -92,13 +87,13 @@ fun FlamingoLyrics(
     val current = remember(lines, isSynced) { mutableIntStateOf(if (isSynced) primaryIndex(lines, positionMs()) else -1) }
     val playhead by rememberUpdatedState(positionMs)
 
-    LaunchedEffect(lines, sweep, isSynced) {
+    LaunchedEffect(lines, words, isSynced) {
         if (!isSynced) return@LaunchedEffect
         while (true) {
             withFrameNanos { }
             val position = playhead()
             current.intValue = primaryIndex(lines, position)
-            exposureTarget.floatValue = heldWordExposure(sweep.getOrNull(current.intValue), position)
+            exposureTarget.floatValue = heldWordExposure(words.getOrNull(current.intValue), position)
         }
     }
 
@@ -107,7 +102,7 @@ fun FlamingoLyrics(
             YosLyricView(
                 lrcEntriesLambda = { entries },
                 lineEndTimesLambda = { ends },
-                isTtmlLyricsLambda = { wordTimed },
+                isTtmlLyricsLambda = { false },
                 liveTimeLambda = { positionMs().coerceIn(0, Int.MAX_VALUE.toLong()).toInt() },
                 mediaEvent = remember(onSeek) {
                     object : YosMediaEvent {
@@ -144,31 +139,6 @@ private fun primaryIndex(lines: List<LyricLine>, positionMs: Long): Int {
         if (lines[i].timeSec <= seconds) index = i else break
     }
     return index
-}
-
-/** Convx's `wordsWithSpacing`: keeps the source line's spaces attached to the preceding word. */
-private fun LyricLine.timedWords(): List<WordTiming>? {
-    val timed = words ?: return null
-    if (timed.isEmpty()) return null
-    var cursor = 0
-    val starts = ArrayList<Int>(timed.size)
-    for (word in timed) {
-        val token = word.text.trim()
-        val start = if (token.isEmpty()) -1 else text.indexOf(token, cursor)
-        if (start < 0) return timed.mapIndexed { index, run ->
-            val next = timed.getOrNull(index + 1)?.text.orEmpty()
-            val needsSpace = run.text.lastOrNull()?.let { it.isLetterOrDigit() } == true &&
-                next.firstOrNull()?.let { it.isLetterOrDigit() } == true
-            WordTiming(run.text + if (needsSpace) " " else "", run.startMs.toFloat(), run.endMs.toFloat())
-        }
-        starts += start
-        cursor = start + token.length
-    }
-    return timed.mapIndexed { index, word ->
-        val from = if (index == 0) 0 else starts[index]
-        val to = starts.getOrNull(index + 1) ?: text.length
-        WordTiming(text.substring(from, to), word.startMs.toFloat(), word.endMs.toFloat())
-    }
 }
 
 /**
