@@ -12,6 +12,23 @@ data class Track(
     val duration: String? = null,
 )
 
+/** One play-history entry, stored as JSON alongside favourites and playlists. */
+data class PlayHistoryEntry(
+    val id: String,
+    val title: String,
+    val artist: String? = null,
+    val thumbnail: String? = null,
+    val durationMs: Long = 0L,
+    val playedAt: Long = 0L,
+) {
+    fun toTrack(): Track = Track(
+        videoId = id,
+        title = title,
+        artist = artist?.ifEmpty { null },
+        thumbs = thumbnail?.ifEmpty { null },
+    )
+}
+
 data class LyricLine(val timeSec: Float, val text: String)
 
 data class AlbumSummary(

@@ -1,5 +1,6 @@
 package app.musiku.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,8 +27,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +54,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.musiku.model.Playlist
+import app.musiku.model.PlayHistoryEntry
 import app.musiku.model.Track
 import app.musiku.ui.LocalApp
 import app.musiku.ui.LocalUi
@@ -59,10 +63,16 @@ import app.musiku.ui.components.Artwork
 import app.musiku.ui.components.LargeTitleList
 import app.musiku.ui.components.Tappable
 import app.musiku.ui.components.TextPromptDialog
+import app.musiku.ui.components.TrackRow
 import app.musiku.ui.components.pressable
 import app.musiku.ui.theme.MIcons
 import app.musiku.ui.theme.SfPro
 import app.musiku.ui.theme.Tok
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /** SF Pro at an explicit size — never the theme's font pick. */
 private fun SfStyle(
@@ -94,14 +104,19 @@ private data class RecentItem(
 @Composable
 fun LibraryScreen() {
     var page by rememberSaveable { mutableStateOf(LibraryPage.Home) }
-    when (page) {
-        LibraryPage.Home -> LibraryHome(onOpen = { page = it })
-        else -> LibraryCollection(page = page, onBack = { page = LibraryPage.Home })
+    var historyOpen by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = historyOpen) { historyOpen = false }
+    Box(Modifier.fillMaxSize().background(Tok.Window)) {
+        when (page) {
+            LibraryPage.Home -> LibraryHome(onOpen = { page = it }, onHistory = { historyOpen = true })
+            else -> LibraryCollection(page = page, onBack = { page = LibraryPage.Home })
+        }
+        if (historyOpen) HistoryScreen(onBack = { historyOpen = false })
     }
 }
 
 @Composable
-private fun LibraryHome(onOpen: (LibraryPage) -> Unit) {
+private fun LibraryHome(onOpen: (LibraryPage) -> Unit, onHistory: () -> Unit) {
     val app = LocalApp.current
     val ui = LocalUi.current
     val liked by app.library.liked.collectAsState()
@@ -165,6 +180,10 @@ private fun LibraryHome(onOpen: (LibraryPage) -> Unit) {
                     DropdownMenuItem(
                         text = { Text("Playlist baru…", style = SfStyle(17.sp, 20.sp, tracking = (-0.43).sp), color = Tok.Label1) },
                         onClick = { menuOpen = false; creating = true },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Riwayat", style = SfStyle(17.sp, 20.sp, tracking = (-0.43).sp), color = Tok.Label1) },
+                        onClick = { menuOpen = false; onHistory() },
                     )
                     DropdownMenuItem(
                         text = { Text("Import dari Spotify", style = SfStyle(17.sp, 20.sp, tracking = (-0.43).sp), color = Tok.Label1) },
@@ -592,6 +611,120 @@ private fun LibrarySongRow(track: Track, queue: List<Track>, index: Int) {
 }
 
 private fun songCount(n: Int): String = if (n == 1) "1 lagu" else "$n lagu"
+
+@Composable
+private fun HistoryScreen(onBack: () -> Unit) {
+    val app = LocalApp.current
+    val ui = LocalUi.current
+    val history by app.library.playHistory.collectAsState()
+    val enabled by app.library.historyEnabled.collectAsState()
+    var confirmClear by remember { mutableStateOf(false) }
+
+    val sections = remember(history) {
+        val today = LocalDate.now()
+        val yesterday = today.minusDays(1)
+        val format = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale("id", "ID"))
+        history.mapNotNull { entry ->
+            val date = runCatching {
+                Instant.ofEpochMilli(entry.playedAt).atZone(ZoneId.systemDefault()).toLocalDate()
+            }.getOrNull() ?: return@mapNotNull null
+            val label = when (date) {
+                today -> "Hari ini"
+                yesterday -> "Kemarin"
+                else -> format.format(date)
+            }
+            label to entry
+        }.groupBy({ it.first }, { it.second }).toList()
+    }
+    val queue = remember(history) { history.map { it.toTrack() } }
+    val disabledHeader: (@Composable () -> Unit)? = if (!enabled) {
+        {
+            Text(
+                "Penyimpanan riwayat sedang dimatikan. Lagu yang diputar sekarang tidak akan dicatat.",
+                color = Tok.Label2,
+                style = SfStyle(13.sp, 18.sp, tracking = (-0.08).sp),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+            )
+        }
+    } else null
+
+    LargeTitleList(
+        "Riwayat",
+        titleBottom = 10.dp,
+        header = disabledHeader,
+        leading = {
+            Row(
+                Modifier.pressable(onClick = onBack).padding(start = 4.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(MIcons.Back, null, tint = Tok.Label1, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(3.dp))
+                Text("Pustaka", style = SfStyle(17.sp, 22.sp, FontWeight.Medium), color = Tok.Label1, maxLines = 1)
+            }
+        },
+        actions = {
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).background(Tok.Fill2).pressable { if (history.isNotEmpty()) confirmClear = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(MIcons.Trash, null, tint = Tok.Label1, modifier = Modifier.size(20.dp))
+            }
+        },
+    ) {
+        if (history.isEmpty()) {
+            item(key = "history-empty") {
+                LibraryEmptyState(
+                    icon = MIcons.List,
+                    title = "Belum ada riwayat",
+                    body = "Lagu yang kamu putar minimal 30 detik akan muncul di sini.",
+                    action = "Cari lagu",
+                    onAction = { ui.navigate(Routes.Search) },
+                )
+            }
+        } else {
+            var offset = 0
+            sections.forEach { (label, entries) ->
+                item(key = "day-$label") {
+                    Text(
+                        label,
+                        style = SfStyle(20.sp, 25.sp, FontWeight.SemiBold, (-0.4).sp),
+                        color = Tok.Label2,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
+                    )
+                }
+                listItemsIndexed(entries, key = { i, e -> "h-${e.id}-${e.playedAt}-$i" }) { i, entry ->
+                    val index = offset + i
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { TrackRow(entry.toTrack(), queue, index) }
+                        Box(
+                            Modifier.size(44.dp).pressable { app.library.removeHistoryEntry(entry.id) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(MIcons.Trash, null, tint = Tok.Label3, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+                offset += entries.size
+            }
+        }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            containerColor = Tok.Surface,
+            shape = RoundedCornerShape(26.dp),
+            title = { Text("Hapus semua riwayat?", color = Tok.Label1, fontWeight = FontWeight.Bold) },
+            text = { Text("Semua lagu dalam riwayat akan dihapus dari perangkat ini.", color = Tok.Label2) },
+            confirmButton = {
+                TextButton(onClick = { app.library.clearHistory(); confirmClear = false }) {
+                    Text("Hapus", color = Tok.Accent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Batal", color = Tok.Label2) } },
+        )
+    }
+}
 
 /** Play / Shuffle pair used above any song list. */
 @Composable

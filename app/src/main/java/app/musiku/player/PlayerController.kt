@@ -78,6 +78,9 @@ class PlayerController(
     private var errorStreak = 0
     private var sleepJob: Job? = null
     private var lastRecentId: String? = null
+    private var historyTrackId: String? = null
+    private var historyMaxMs = 0L
+    private var historyRecorded = false
 
     private val audio = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
@@ -177,6 +180,33 @@ class PlayerController(
         }
     }
 
+    /**
+     * A play counts once the song has actually run for 30 s or half its duration, whichever
+     * comes first. A quick skip never reaches the threshold. Repeat-one wraps the playhead back
+     * to zero, so that case starts a fresh measurement.
+     */
+    private fun noteHistory(c: MediaController) {
+        if (!library.historyEnabled.value) return
+        val t = _ui.value.current ?: return
+        val pos = c.currentPosition.coerceAtLeast(0L)
+        val dur = c.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
+        val threshold = if (dur > 0) minOf(30_000L, dur / 2) else 30_000L
+        if (t.videoId != historyTrackId) {
+            historyTrackId = t.videoId
+            historyMaxMs = 0L
+            historyRecorded = false
+        } else if (historyRecorded && pos < 1_000L && historyMaxMs >= threshold) {
+            historyMaxMs = 0L
+            historyRecorded = false
+        }
+        if (historyRecorded || !c.isPlaying || !c.playWhenReady) return
+        if (pos > historyMaxMs) historyMaxMs = pos
+        if (historyMaxMs >= threshold) {
+            historyRecorded = true
+            library.recordPlay(t, dur)
+        }
+    }
+
     /** position + the soft fade between songs (crossfade) */
     private suspend fun tick() {
         var fadingApplied = false
@@ -186,6 +216,7 @@ class PlayerController(
             if (c != null) {
                 val posSec = c.currentPosition / 1000f
                 _position.value = posSec
+                noteHistory(c)
                 val dur = c.duration.takeIf { it != C.TIME_UNSET && it > 0 }?.let { it / 1000f } ?: 0f
                 if (dur != _ui.value.durationSec) _ui.value = _ui.value.copy(durationSec = dur)
 

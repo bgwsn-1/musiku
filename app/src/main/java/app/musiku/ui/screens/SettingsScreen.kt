@@ -83,6 +83,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val crossfade by app.library.crossfade.collectAsState()
     val cfSec by app.library.cfSec.collectAsState()
     val autoplay by app.library.autoplay.collectAsState()
+    val historyEnabled by app.library.historyEnabled.collectAsState()
     val lowDevice by app.library.lowDevice.collectAsState()
     var license by remember { mutableStateOf(false) }
 
@@ -154,6 +155,20 @@ fun SettingsScreen(onBack: () -> Unit) {
                         subtitle = "Matikan liquid glass & blur agar lebih ringan",
                         checked = lowDevice,
                         onCheckedChange = { app.library.setLowDevice(it) },
+                    )
+                }
+            }
+
+            item(key = "history") {
+                Spacer(Modifier.height(28.dp))
+                SettingsGroup("Riwayat") {
+                    SettingsToggleRow(
+                        icon = MIcons.List,
+                        tint = SysTeal,
+                        title = "Simpan riwayat",
+                        subtitle = "Lagu dicatat setelah 30 detik atau setengah durasi",
+                        checked = historyEnabled,
+                        onCheckedChange = { app.library.setHistoryEnabled(it) },
                     )
                 }
             }

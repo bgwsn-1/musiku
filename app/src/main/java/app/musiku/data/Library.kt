@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.musiku.model.Playlist
+import app.musiku.model.PlayHistoryEntry
 import app.musiku.model.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +47,40 @@ private fun parseTracks(raw: String?): List<Track> {
     }.getOrDefault(emptyList())
 }
 
+private fun JSONObject.toHistoryEntryOrNull(): PlayHistoryEntry? {
+    val id = optString("id")
+    val title = optString("title")
+    if (id.isEmpty() || title.isEmpty()) return null
+    return PlayHistoryEntry(
+        id = id,
+        title = title,
+        artist = optString("artist").ifEmpty { null },
+        thumbnail = optString("thumbnail").ifEmpty { null },
+        durationMs = optLong("durationMs"),
+        playedAt = if (has("playedAt")) getLong("playedAt") else 0L,
+    )
+}
+
+/** Corrupt or over-long history never takes the app down: bad rows are dropped, the rest is capped. */
+private fun parseHistory(raw: String?): List<PlayHistoryEntry> {
+    if (raw.isNullOrEmpty()) return emptyList()
+    return runCatching {
+        val a = JSONArray(raw)
+        (0 until a.length()).mapNotNull { runCatching { a.getJSONObject(it).toHistoryEntryOrNull() }.getOrNull() }
+    }.getOrDefault(emptyList())
+        .sortedByDescending { it.playedAt }
+        .take(Library.HISTORY_LIMIT)
+}
+
+private fun List<PlayHistoryEntry>.toHistoryJson(): JSONArray = JSONArray().also { a ->
+    forEach { e ->
+        a.put(
+            JSONObject().put("id", e.id).put("title", e.title).putOpt("artist", e.artist)
+                .putOpt("thumbnail", e.thumbnail).put("durationMs", e.durationMs).put("playedAt", e.playedAt),
+        )
+    }
+}
+
 /**
  * Everything the web build keeps in localStorage: favourites, playlists, recents and the
  * player settings. Held in memory as StateFlows, mirrored to DataStore on every change.
@@ -54,6 +89,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kLiked = stringPreferencesKey("liked")
     private val kPlaylists = stringPreferencesKey("playlists")
     private val kRecent = stringPreferencesKey("recent")
+    private val kPlayHistory = stringPreferencesKey("playHistory")
+    private val kHistoryEnabled = booleanPreferencesKey("historyEnabled")
     private val kCrossfade = booleanPreferencesKey("crossfade")
     private val kCfSec = intPreferencesKey("crossfadeSec")
     private val kAutoplay = booleanPreferencesKey("autoplay")
@@ -67,6 +104,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val _bookmarkedArtists = MutableStateFlow<Set<String>>(emptySet())
     private val _playlists = MutableStateFlow<List<Playlist>>(emptyList())
     private val _recent = MutableStateFlow<List<Track>>(emptyList())
+    private val _playHistory = MutableStateFlow<List<PlayHistoryEntry>>(emptyList())
+    private val _historyEnabled = MutableStateFlow(true)
     private val _crossfade = MutableStateFlow(false)
     private val _cfSec = MutableStateFlow(DEFAULT_CF_SEC)
     private val _autoplay = MutableStateFlow(true)
@@ -82,6 +121,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     val bookmarkedArtists: StateFlow<Set<String>> = _bookmarkedArtists
     val playlists: StateFlow<List<Playlist>> = _playlists
     val recent: StateFlow<List<Track>> = _recent
+    val playHistory: StateFlow<List<PlayHistoryEntry>> = _playHistory
+    val historyEnabled: StateFlow<Boolean> = _historyEnabled
     val crossfade: StateFlow<Boolean> = _crossfade
     val cfSec: StateFlow<Int> = _cfSec
     val autoplay: StateFlow<Boolean> = _autoplay
@@ -101,6 +142,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
                 (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() }.toSet()
             }.getOrDefault(emptySet())
             _recent.value = parseTracks(p[kRecent])
+            _playHistory.value = parseHistory(p[kPlayHistory])
+            _historyEnabled.value = p[kHistoryEnabled] ?: true
             _playlists.value = runCatching {
                 val a = JSONArray(p[kPlaylists] ?: "[]")
                 (0 until a.length()).map { i ->
@@ -133,7 +176,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     }
 
     private fun save(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
-        scope.launch { ctx.store.edit { block(it) } }
+        // A full or corrupt store must never take down playback: the in-memory copy stays authoritative.
+        scope.launch { runCatching { ctx.store.edit { block(it) } } }
     }
 
     private fun saveLiked() = save { it[kLiked] = _liked.value.toJsonArray().toString() }
@@ -143,6 +187,9 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
         it[kBookmarkedArtists] = a.toString()
     }
     private fun saveRecent() = save { it[kRecent] = _recent.value.toJsonArray().toString() }
+    private fun savePlayHistory() = save { p ->
+        runCatching { p[kPlayHistory] = _playHistory.value.toHistoryJson().toString() }
+    }
     private fun savePlaylists() = save { p ->
         val a = JSONArray()
         _playlists.value.forEach { pl ->
@@ -174,6 +221,37 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     fun pushRecent(t: Track) {
         _recent.value = (listOf(t) + _recent.value.filterNot { it.videoId == t.videoId }).take(30)
         saveRecent()
+    }
+
+    // ── play history ─────────────────────────────────────────────────────────
+    /** Called once a track has actually been played, not on a quick skip. */
+    fun recordPlay(t: Track, durationMs: Long) {
+        if (!_historyEnabled.value || t.videoId.isBlank()) return
+        val entry = PlayHistoryEntry(
+            id = t.videoId,
+            title = t.title,
+            artist = t.artist?.ifEmpty { null },
+            thumbnail = t.thumbs?.ifEmpty { null },
+            durationMs = durationMs.coerceAtLeast(0L),
+            playedAt = System.currentTimeMillis(),
+        )
+        _playHistory.value = (listOf(entry) + _playHistory.value.filterNot { it.id == entry.id }).take(HISTORY_LIMIT)
+        savePlayHistory()
+    }
+
+    fun removeHistoryEntry(id: String) {
+        _playHistory.value = _playHistory.value.filterNot { it.id == id }
+        savePlayHistory()
+    }
+
+    fun clearHistory() {
+        _playHistory.value = emptyList()
+        savePlayHistory()
+    }
+
+    fun setHistoryEnabled(on: Boolean) {
+        _historyEnabled.value = on
+        save { it[kHistoryEnabled] = on }
     }
 
     // ── playlists ────────────────────────────────────────────────────────────
@@ -258,6 +336,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     fun setLowDevice(on: Boolean) { _lowDevice.value = on; save { it[kLowDevice] = on } }
 
     companion object {
+        /** JSON string in DataStore is capped well below the ~5 MB localStorage budget. */
+        const val HISTORY_LIMIT = 300
         const val DEFAULT_CF_SEC = 4
         val CF_PRESETS = listOf(2, 4, 6, 8, 10, 12)
     }
