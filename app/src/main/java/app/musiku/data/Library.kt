@@ -10,6 +10,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import app.musiku.model.Playlist
 import app.musiku.model.PlayHistoryEntry
 import app.musiku.model.Track
+import app.musiku.ui.nowplaying.PlayerArtworkStyle
+import app.musiku.ui.nowplaying.PlayerBackgroundStyle
+import app.musiku.ui.nowplaying.PlayerLook
+import app.musiku.ui.nowplaying.PlayerSlot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -100,6 +104,11 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kBookmarkedArtists = stringPreferencesKey("bookmarkedArtists")
     private val kLowDevice = booleanPreferencesKey("lowDevice")
     private val kCanvasEnabled = booleanPreferencesKey("canvasEnabled")
+    private val kPlayerLook = intPreferencesKey("playerLook")
+    private val kPlayerArtworkStyle = intPreferencesKey("playerArtworkStyle")
+    private val kPlayerBackgroundStyle = intPreferencesKey("playerBackgroundStyle")
+    private val kPlayerLayoutOrder = stringPreferencesKey("playerLayoutOrder")
+    private val kPlayerLayoutHidden = stringPreferencesKey("playerLayoutHidden")
 
     private val _liked = MutableStateFlow<List<Track>>(emptyList())
     private val _bookmarkedArtists = MutableStateFlow<Set<String>>(emptySet())
@@ -114,6 +123,11 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val _repeat = MutableStateFlow(0)
     private val _lowDevice = MutableStateFlow(false)
     private val _canvasEnabled = MutableStateFlow(false)
+    private val _playerLook = MutableStateFlow(PlayerLook.Squared)
+    private val _playerArtworkStyle = MutableStateFlow(PlayerArtworkStyle.Card)
+    private val _playerBackgroundStyle = MutableStateFlow(PlayerBackgroundStyle.Gradient)
+    private val _playerLayoutOrder = MutableStateFlow(PlayerSlot.DefaultOrder)
+    private val _playerLayoutHidden = MutableStateFlow(emptySet<PlayerSlot>())
 
     /** Spotify track URI → the YouTube Music track it was matched to, so syncs skip old work. */
     private val spotifyCache = java.util.concurrent.ConcurrentHashMap<String, Track>()
@@ -133,6 +147,11 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     val lowDevice: StateFlow<Boolean> = _lowDevice
     /** Spotify Canvas behind the player artwork. Opt-in: it needs a Spotify session cookie. */
     val canvasEnabled: StateFlow<Boolean> = _canvasEnabled
+    val playerLook: StateFlow<PlayerLook> = _playerLook
+    val playerArtworkStyle: StateFlow<PlayerArtworkStyle> = _playerArtworkStyle
+    val playerBackgroundStyle: StateFlow<PlayerBackgroundStyle> = _playerBackgroundStyle
+    val playerLayoutOrder: StateFlow<List<PlayerSlot>> = _playerLayoutOrder
+    val playerLayoutHidden: StateFlow<Set<PlayerSlot>> = _playerLayoutHidden
 
     @Volatile var loaded = false
         private set
@@ -175,6 +194,11 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             _repeat.value = (p[kRepeat] ?: 0).coerceIn(0, 2)
             _lowDevice.value = p[kLowDevice] ?: false
             _canvasEnabled.value = p[kCanvasEnabled] ?: false
+            _playerLook.value = PlayerLook.entries.getOrElse(p[kPlayerLook] ?: 0) { PlayerLook.Squared }
+            _playerArtworkStyle.value = PlayerArtworkStyle.from(p[kPlayerArtworkStyle] ?: 0)
+            _playerBackgroundStyle.value = PlayerBackgroundStyle.from(p[kPlayerBackgroundStyle] ?: 1)
+            _playerLayoutOrder.value = PlayerSlot.orderFrom(p[kPlayerLayoutOrder])
+            _playerLayoutHidden.value = PlayerSlot.hiddenFrom(p[kPlayerLayoutHidden])
             loaded = true
             ready.complete(Unit)
         }
@@ -340,6 +364,34 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     fun setRepeat(mode: Int) { _repeat.value = mode; save { it[kRepeat] = mode } }
     fun setLowDevice(on: Boolean) { _lowDevice.value = on; save { it[kLowDevice] = on } }
     fun setCanvasEnabled(on: Boolean) { _canvasEnabled.value = on; save { it[kCanvasEnabled] = on } }
+
+    // ── player design (Convx `PlayerLook` / `PlayerArtworkStyle` / `PlayerBackgroundStyle`) ──
+    fun setPlayerLook(look: PlayerLook) {
+        _playerLook.value = look
+        save { it[kPlayerLook] = look.ordinal }
+    }
+
+    fun setPlayerArtworkStyle(style: PlayerArtworkStyle) {
+        _playerArtworkStyle.value = style
+        save { it[kPlayerArtworkStyle] = style.ordinal }
+    }
+
+    fun setPlayerBackgroundStyle(style: PlayerBackgroundStyle) {
+        _playerBackgroundStyle.value = style
+        save { it[kPlayerBackgroundStyle] = style.ordinal }
+    }
+
+    fun setPlayerLayoutOrder(order: List<PlayerSlot>) {
+        val v = PlayerSlot.normalize(order)
+        _playerLayoutOrder.value = v
+        save { it[kPlayerLayoutOrder] = PlayerSlot.serializeOrder(v) }
+    }
+
+    fun setPlayerLayoutHidden(hidden: Set<PlayerSlot>) {
+        val v = hidden.filter { it.hideable }.toSet()
+        _playerLayoutHidden.value = v
+        save { it[kPlayerLayoutHidden] = PlayerSlot.serializeHidden(v) }
+    }
 
     companion object {
         /** JSON string in DataStore is capped well below the ~5 MB localStorage budget. */

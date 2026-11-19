@@ -52,31 +52,12 @@ import app.musiku.ui.components.pressable
 import app.musiku.ui.theme.MIcons
 import app.musiku.ui.theme.Tok
 
-// iOS kicker colours, dark variants — the same set Convx's settings rows tile their glyphs with.
-private val SysRed = Color(0xFFFF453A)
-private val SysOrange = Color(0xFFFF9F0A)
-private val SysPink = Color(0xFFFF375F)
-private val SysPurple = Color(0xFFBF5AF2)
-private val SysBlue = Color(0xFF0A84FF)
-private val SysTeal = Color(0xFF40C8E0)
-private val SysGreen = Color(0xFF30D158)
-private val SysGray = Color(0xFF8E8E93)
-private val SysIndigo = Color(0xFF5E5CE6)
-
-// Convx's inset-grouped metrics (IosMetrics): 16dp page inset, 26dp card radius, 30dp glyph
-// tiles on a 7dp radius, 52dp minimum row, dividers inset to the text column at 58dp.
-private val PageGutter = 16.dp
-private val CardShape = RoundedCornerShape(26.dp)
-private val TileShape = RoundedCornerShape(7.dp)
-private val TileSize = 30.dp
-private const val DividerInset = 58
-
 /**
  * Convx's root Settings page: iOS inset-grouped cards on the grouped background, one coloured
  * glyph tile per row, a footnote label above each group, and the version pinned at the bottom.
  */
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onPlayerDesign: () -> Unit = {}) {
     val app = LocalApp.current
     val ui = LocalUi.current
     val ctx = LocalContext.current
@@ -85,6 +66,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val autoplay by app.library.autoplay.collectAsState()
     val historyEnabled by app.library.historyEnabled.collectAsState()
     val lowDevice by app.library.lowDevice.collectAsState()
+    val look by app.library.playerLook.collectAsState()
     val canvasEnabled by app.library.canvasEnabled.collectAsState()
     val canvasStatus by app.canvas.status.collectAsState()
     var license by remember { mutableStateOf(false) }
@@ -176,6 +158,14 @@ fun SettingsScreen(onBack: () -> Unit) {
             item(key = "appearance") {
                 Spacer(Modifier.height(28.dp))
                 SettingsGroup("Tampilan") {
+                    SettingsChoiceRow(
+                        icon = MIcons.Disc,
+                        tint = SysPink,
+                        title = "Desain pemutar",
+                        value = look.label,
+                        onClick = onPlayerDesign,
+                    )
+                    SettingsDivider()
                     SettingsToggleRow(
                         icon = MIcons.Settings,
                         tint = SysOrange,
@@ -279,140 +269,4 @@ private fun nextCfSec(cur: Int): Int {
     val presets = Library.CF_PRESETS
     val index = presets.indexOf(cur).let { if (it >= 0) it else 0 }
     return presets[(index + 1) % presets.size]
-}
-
-/** One inset-grouped card: an optional footnote label, then rows split by hairlines. */
-@Composable
-private fun SettingsGroup(label: String?, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = PageGutter)) {
-        if (label != null) {
-            Text(
-                label,
-                color = Tok.Label3,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-0.08).sp,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
-            )
-        }
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(CardShape)
-                .background(Tok.Surface),
-            content = content,
-        )
-    }
-}
-
-@Composable
-private fun SettingsDivider() {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(start = DividerInset.dp)
-            .height(0.33.dp)
-            .background(Tok.Hairline),
-    )
-}
-
-/** Convx's `SettingsLinkRow`: glyph tile, title, one line of description, value, chevron. */
-@Composable
-private fun SettingsRow(
-    icon: ImageVector,
-    tint: Color,
-    title: String,
-    subtitle: String? = null,
-    trailing: String? = null,
-    chevron: Boolean = true,
-    onClick: (() -> Unit)? = null,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(if (onClick != null) Modifier.pressable(onClick = onClick, pressScale = 0.99f) else Modifier)
-            .defaultMinSize(minHeight = 52.dp)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-    ) {
-        SettingsTile(icon, tint)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Tok.Label1, fontSize = 17.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (subtitle != null) {
-                Text(
-                    subtitle, color = Tok.Label3, fontSize = 13.sp, lineHeight = 18.sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (trailing != null) {
-            Text(trailing, color = Tok.Label3, fontSize = 17.sp, maxLines = 1)
-            Spacer(Modifier.width(8.dp))
-        }
-        if (chevron) {
-            Icon(MIcons.ChevronRight, null, tint = Tok.Label3.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
-        }
-    }
-}
-
-@Composable
-private fun SettingsToggleRow(
-    icon: ImageVector,
-    tint: Color,
-    title: String,
-    subtitle: String? = null,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .defaultMinSize(minHeight = 52.dp)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-    ) {
-        SettingsTile(icon, tint)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                color = if (enabled) Tok.Label1 else Tok.Label3,
-                fontSize = 17.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle != null) {
-                Text(
-                    subtitle, color = Tok.Label3, fontSize = 13.sp, lineHeight = 18.sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = SysGreen,
-                checkedBorderColor = Color.Transparent,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = Color.White.copy(alpha = 0.18f),
-                uncheckedBorderColor = Color.Transparent,
-            ),
-        )
-    }
-}
-
-@Composable
-private fun SettingsTile(icon: ImageVector, tint: Color) {
-    Box(
-        Modifier.size(TileSize).clip(TileShape).background(tint),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
-    }
 }

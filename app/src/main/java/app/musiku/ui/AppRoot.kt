@@ -82,6 +82,8 @@ import app.musiku.ui.nowplaying.NowPlayingState
 import app.musiku.ui.nowplaying.LocalPlayerMorphProgress
 import app.musiku.ui.nowplaying.PlayerMorph
 import app.musiku.ui.nowplaying.PlayerMorphHost
+import app.musiku.ui.nowplaying.PlayerLook
+import app.musiku.ui.nowplaying.PlayerBackgroundStyle
 import app.musiku.ui.nowplaying.playerBackgroundAlpha
 import app.musiku.ui.nowplaying.playerContentAlpha
 import app.musiku.ui.screens.AlbumScreen
@@ -94,6 +96,7 @@ import app.musiku.ui.screens.SettingsScreen
 import app.musiku.ui.screens.LyricsPanel
 import app.musiku.ui.screens.OnlinePlaylistScreen
 import app.musiku.ui.screens.PlaylistScreen
+import app.musiku.ui.screens.PlayerDesignScreen
 import app.musiku.ui.screens.QueuePanel
 import app.musiku.ui.screens.RadioScreen
 import app.musiku.ui.screens.RadioStationScreen
@@ -262,7 +265,10 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                         composable(Routes.Library) { LibraryScreen() }
                         composable(Routes.Explore) { ExploreScreen() }
                         composable(Routes.Settings) {
-                            SettingsScreen(onBack = { nav.popBackStack() })
+                            SettingsScreen(onBack = { nav.popBackStack() }, onPlayerDesign = { nav.navigate(Routes.PlayerDesign) })
+                        }
+                        composable(Routes.PlayerDesign) {
+                            PlayerDesignScreen(onBack = { nav.popBackStack() })
                         }
                         composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                             AlbumScreen(it.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })
@@ -316,7 +322,7 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
 
                 // floating dock: mini player (when something is queued) + tab bar, morphing into
                 // Convx's inline row on scroll-down. Settings is a page pushed over the tabs.
-                if (route != Routes.Settings) {
+                if (route != Routes.Settings && route != Routes.PlayerDesign) {
                     val selectedTab = when {
                         route in TabRoutes -> route
                         else -> nav.previousBackStackEntry?.destination?.route?.takeIf { it in TabRoutes } ?: Routes.Home
@@ -513,6 +519,11 @@ private fun NowPlayingHost(app: MusikuApp, ui: UiState) {
     val liked by app.library.liked.collectAsState()
     val cf by app.library.crossfade.collectAsState()
     val cfSec by app.library.cfSec.collectAsState()
+    val look by app.library.playerLook.collectAsState()
+    val artworkStyle by app.library.playerArtworkStyle.collectAsState()
+    val bgStyle by app.library.playerBackgroundStyle.collectAsState()
+    val layoutOrder by app.library.playerLayoutOrder.collectAsState()
+    val hiddenSlots by app.library.playerLayoutHidden.collectAsState()
     val track = ps.current ?: return
     val lyrics by rememberLyrics(track, ps.durationSec)
 
@@ -575,6 +586,11 @@ private fun NowPlayingHost(app: MusikuApp, ui: UiState) {
         NowPlayingScreen(
             state,
             actions,
+            look = look,
+            artworkStyle = artworkStyle,
+            background = bgStyle,
+            layoutOrder = layoutOrder,
+            hiddenSlots = hiddenSlots,
             backgroundAlpha = { playerBackgroundAlpha(morphProgress()) },
             contentAlpha = { playerContentAlpha(morphProgress()) },
         )
@@ -589,7 +605,13 @@ private fun NowPlayingHost(app: MusikuApp, ui: UiState) {
             val shown = remember { mutableStateOf(ui.panel) }
             if (ui.panel != null) shown.value = ui.panel
             Box(Modifier.fillMaxSize().background(Color.Black)) {
-                NowPlayingBackground(track.thumbs, Modifier.fillMaxSize())
+                NowPlayingBackground(
+                    track.thumbs,
+                    Modifier.fillMaxSize(),
+                    style = if (look == PlayerLook.Hero) PlayerBackgroundStyle.Gradient else bgStyle,
+                    hero = look == PlayerLook.Hero,
+                    isPlaying = ps.playing,
+                )
                 Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                     when (shown.value) {
                         Panel.Lyrics -> LyricsPanel(track) { ui.panel = null }

@@ -83,6 +83,8 @@ dependencies {
     // liquid glass: real backdrop blur (RenderEffect) for the functional layer
     implementation("dev.chrisbanes.haze:haze:1.1.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // drag-to-reorder for the player layout builder (Convx uses the same library)
+    implementation("sh.calvin.reorderable:reorderable:3.0.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.navigation:navigation-compose:2.8.2")
     implementation("androidx.datastore:datastore-preferences:1.1.1")

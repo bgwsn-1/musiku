@@ -31,6 +31,19 @@ import app.musiku.ui.theme.LocalLowDevice
 import java.io.File
 
 /**
+ * True when the cover slot is currently drawing a canvas video instead of the artwork. Full bleed
+ * lays out for an artwork, and a 16:9 video would be cropped by it, so Convx drops the bleed look
+ * while a video is on screen (`!videoActive`) — this is the same gate for the cover frame.
+ */
+@Composable
+fun rememberCanvasVideoActive(track: Track): Boolean {
+    val app = LocalApp.current
+    val lowDevice = LocalLowDevice.current
+    val enabled by app.library.canvasEnabled.collectAsState()
+    return enabled && !lowDevice && app.canvas.cached(track) != null
+}
+
+/**
  * The square cover slot: Spotify Canvas when the user turned it on, has a Spotify session cookie
  * and Spotify actually has a canvas for this track; the static artwork otherwise. Loading is
  * silent — the artwork stays up until the video file exists, then crossfades into it.

@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -89,6 +90,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -109,25 +111,35 @@ import app.musiku.ui.theme.MIcons
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /**
- * Convx's Now Playing, squared skin (`ui/player/Player_v2.kt`, `PlayerV2Frame` portrait branch):
+ * Convx's Now Playing (`ui/player/Player_v2.kt`, `PlayerV2Frame` portrait branch):
  *
- *   handle (54×5 at 30%) → weighted pane (spacers · 32dp-gutter square cover · meta row at 32dp)
- *   → controls at 32dp (7dp seek that grows to 12dp on touch, 302dp transport, 341dp volume)
- *   → 12dp-padded tab row sitting on the navigation inset.
+ *   handle (54×5 at 30%) → weighted pane → controls → 12dp-padded tab row on the navigation inset.
  *
- * The artwork is 12dp-rounded with an 8dp shadow and shrinks to 0.729× while paused, exactly as
- * Convx's Squared look does. Chrome below the meta row is composited with a Plus pass (Convx's
- * `flamingoChrome`): over a dark art background that is what keeps the unplayed track and the
- * time labels coloured instead of flat grey.
+ * Two looks, Convx's `PlayerLook`:
+ *  • [PlayerLook.Squared] — a 32dp-gutter square card, 12dp corners, 8dp shadow, 0.729× while paused.
+ *  • [PlayerLook.Hero] — full bleed: the sleeve runs edge to edge and to the true top of the
+ *    screen, the handle floats over it, and its foot dissolves into the field through a
+ *    `DstIn` smoothstep so the title row docks under the fade.
+ *
+ * The pane draws its [PlayerSlot]s in the stored [layoutOrder], skipping [hiddenSlots], so the
+ * layout builder in settings really rearranges the player. Chrome below the meta row is composited
+ * with a Plus pass (Convx's `flamingoChrome`): over a dark art background that is what keeps the
+ * unplayed track and the time labels coloured instead of flat grey.
  */
 @Composable
 fun NowPlayingScreen(
     state: NowPlayingState,
     actions: NowPlayingActions,
     modifier: Modifier = Modifier,
+    look: PlayerLook = PlayerLook.Squared,
+    artworkStyle: PlayerArtworkStyle = PlayerArtworkStyle.Card,
+    background: PlayerBackgroundStyle = PlayerBackgroundStyle.Gradient,
+    layoutOrder: List<PlayerSlot> = PlayerSlot.DefaultOrder,
+    hiddenSlots: Set<PlayerSlot> = emptySet(),
     // Morph staging (Convx draws the background and the page as two recorded layers): the field
     // leads across the first fifth, the page follows from a tenth to six tenths. Lambdas so the
     // flight stays a draw-phase read and never recomposes the player.
@@ -144,60 +156,114 @@ fun NowPlayingScreen(
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // Convx keeps the tab row 31dp off the screen edge, inset included.
     val bottomBarPad = (31.dp - navBottom).coerceAtLeast(4.dp)
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
+    // A canvas is 16:9 and the bleed look lays out for a square sleeve, so Convx falls back to the
+    // squared frame while a video is on screen (`overlayHandle = isHeroLook && !videoActive`).
+    val hero = look == PlayerLook.Hero && !rememberCanvasVideoActive(track)
+    val order = remember(layoutOrder) { PlayerSlot.normalize(layoutOrder) }
+    // Full bleed means "the art is the field", so it pins the gradient like Convx does.
+    val fieldStyle = if (hero) PlayerBackgroundStyle.Gradient else background
 
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().then(if (lowDevice) Modifier else Modifier.haze(haze))) {
-            // Convx's default GRADIENT field: the sleeve's top/bottom edge colours, no image on screen.
-            // The black under it fades with the field so the card can hand off to the pill.
+            // The black under the field fades with it so the card can hand off to the pill.
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = backgroundAlpha() }) {
                 Box(Modifier.fillMaxSize().background(Color.Black))
-                NowPlayingBackground(track.thumbs, Modifier.fillMaxSize())
+                NowPlayingBackground(
+                    artworkUrl = track.thumbs,
+                    modifier = Modifier.fillMaxSize(),
+                    style = fieldStyle,
+                    hero = hero,
+                    isPlaying = state.playing,
+                )
             }
         }
 
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .graphicsLayer { alpha = contentAlpha() },
-        ) {
-            PlayerHandle(onClose = actions.onClose)
+        Box(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    // The bleed sleeve reaches the true top edge, so the status inset moves onto
+                    // the floating handle instead (Convx's `overlayHandle` branch).
+                    .padding(top = if (hero) 0.dp else statusTop)
+                    .navigationBarsPadding()
+                    .graphicsLayer { alpha = contentAlpha() },
+            ) {
+                if (!hero) PlayerHandle(onClose = actions.onClose)
 
-            // The pane owns the slack: cover centred between two weights, meta row pinned to its foot.
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                Column(Modifier.fillMaxSize()) {
-                    Spacer(Modifier.weight(1f))
-                    PlayerCover(track = track, playing = state.playing)
-                    Spacer(Modifier.weight(1f))
-                    PlayerMetaRow(
-                        track = track,
-                        liked = state.liked,
-                        actions = actions,
-                        onMore = { menuOpen = true },
-                    )
+                order.forEach { slot ->
+                    if (slot in hiddenSlots) return@forEach
+                    when (slot) {
+                        PlayerSlot.AlbumArt -> if (hero) {
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                PlayerCoverSlot(
+                                    track = track,
+                                    playing = state.playing,
+                                    hero = true,
+                                    style = artworkStyle,
+                                )
+                            }
+                        } else {
+                            // Squared centres its card between two weights, the meta row pinned
+                            // to the foot of the pane.
+                            Spacer(Modifier.weight(1f))
+                            PlayerCoverSlot(
+                                track = track,
+                                playing = state.playing,
+                                hero = false,
+                                style = artworkStyle,
+                            )
+                            Spacer(Modifier.weight(1f))
+                        }
+
+                        PlayerSlot.TrackInfo -> PlayerMetaRow(
+                            track = track,
+                            liked = state.liked,
+                            actions = actions,
+                            onMore = { menuOpen = true },
+                        )
+
+                        PlayerSlot.SeekBar -> Box(
+                            Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+                        ) { PlayerSeek(state = state, actions = actions) }
+
+                        PlayerSlot.Controls -> {
+                            Spacer(Modifier.height(30.dp)) // Space between timeline and transport.
+                            PlayerTransport(
+                                playing = state.playing,
+                                actions = actions,
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
+                            )
+                        }
+
+                        PlayerSlot.ActionRow -> {
+                            Spacer(Modifier.height(23.dp)) // Room for the volume control's target.
+                            PlayerVolume(
+                                volume = state.volume,
+                                onVolume = actions.onVolume,
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
+                            )
+                        }
+                    }
+                }
+
+                PlayerTabs(state = state, actions = actions, bottomPad = bottomBarPad)
+            }
+
+            if (hero) {
+                // Floating handle: Convx keeps it 16dp under the status bar, over the artwork.
+                Column(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(top = statusTop),
+                ) {
+                    PlayerHandle(onClose = actions.onClose)
                 }
             }
-
-            Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp)) {
-                PlayerSeek(state = state, actions = actions)
-                Spacer(Modifier.height(30.dp)) // Space between the timeline and transport controls.
-                PlayerTransport(
-                    playing = state.playing,
-                    actions = actions,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
-                Spacer(Modifier.height(23.dp)) // Leave room for the volume control's touch target.
-                PlayerVolume(
-                    volume = state.volume,
-                    onVolume = actions.onVolume,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
-            }
-
-            PlayerTabs(state = state, actions = actions, bottomPad = bottomBarPad)
         }
 
         // menu: scrim + floating panel that grows from the bottom-right corner
@@ -280,9 +346,27 @@ private fun PlayerHandle(onClose: () -> Unit) {
     }
 }
 
-/** 32dp-gutter square card: 12dp corners, 8dp shadow, 0.729× while paused. */
+/**
+ * The album art slot in whichever look is active.
+ *
+ * Full bleed reproduces Convx's `Modifier.layout`: the sleeve wants 524/393 of the width, but its
+ * laid-out box is 33/393 shorter, and [heroOverlapPx] hands that difference back to the caller so
+ * the title row docks under the fade instead of under a visible gap. Squared keeps the 32dp
+ * gutter, the shadow and the pause shrink.
+ */
 @Composable
-private fun PlayerCover(track: Track, playing: Boolean) {
+private fun PlayerCoverSlot(
+    track: Track,
+    playing: Boolean,
+    hero: Boolean,
+    style: PlayerArtworkStyle,
+) {
+    val coverStyle = style.coverStyle()
+    val rotation by rememberCoverRotation(coverStyle, playing)
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
+    val cornerRadius = if (hero) 0.dp else 12.dp
+    val shape = coverStyle.shape(cornerRadius)
     val scale by animateFloatAsState(
         // More damping on the way down so the card does not overshoot into the meta row.
         targetValue = if (playing) 1f else 0.729f,
@@ -293,13 +377,33 @@ private fun PlayerCover(track: Track, playing: Boolean) {
         label = "coverScale",
     )
     SideEffect { PlayerMorph.coverScale = scale }
-    Box(
+
+    val frame = if (hero) {
+        Modifier
+            .fillMaxWidth()
+            .layout { measurable, constraints ->
+                val overlap = heroOverlapPx(constraints.maxWidth)
+                // Reserve exactly the title row (8 + two 22pt lines + 16); larger text grows it
+                // with fontScale, as Convx does.
+                val artworkHeight = minOf(
+                    (constraints.maxWidth * 524f / 393f).roundToInt(),
+                    (constraints.maxHeight - (24.dp + 44.dp * fontScale).roundToPx() + overlap)
+                        .coerceAtLeast(1),
+                )
+                val cover = measurable.measure(
+                    constraints.copy(minHeight = artworkHeight, maxHeight = artworkHeight),
+                )
+                layout(cover.width, (artworkHeight - overlap).coerceAtLeast(0)) {
+                    cover.placeRelative(0, 0)
+                }
+            }
+            .heroFootFade(rememberHeroFadeBrush(wide = false))
+    } else {
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 32.dp)
             .aspectRatio(1f)
             // The morph's full end: the flight lands on this rect (not the pause-shrunk paint).
-            .onGloballyPositioned { if (it.isAttached) PlayerMorph.fullArtBounds = it.boundsInRoot() }
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -309,8 +413,16 @@ private fun PlayerCover(track: Track, playing: Boolean) {
                     PlayerMorph.miniArtBounds != null && PlayerMorph.fullArtBounds != null
                 ) 0f else 1f
             }
-            .shadow(8.dp, RoundedCornerShape(12.dp))
-            .clip(RoundedCornerShape(12.dp)),
+            .shadow(8.dp, shape)
+    }
+
+    PlayerCoverSurface(
+        style = coverStyle,
+        rotation = rotation,
+        cornerRadius = cornerRadius,
+        modifier = frame.onGloballyPositioned {
+            if (it.isAttached) PlayerMorph.fullArtBounds = it.boundsInRoot()
+        },
     ) {
         CanvasOrArtwork(track = track, playing = playing, modifier = Modifier.fillMaxSize())
     }

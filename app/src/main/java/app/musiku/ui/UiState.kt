@@ -49,6 +49,7 @@ object Routes {
     const val Library = "library"
     const val Explore = "explore"
     const val Settings = "settings"
+    const val PlayerDesign = "player_design"
     fun album(id: String) = "album/$id"
     fun artist(id: String) = "artist/$id"
     fun playlist(id: String) = "playlist/$id"
