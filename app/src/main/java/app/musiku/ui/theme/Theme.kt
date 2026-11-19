@@ -1,10 +1,8 @@
 package app.musiku.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -14,9 +12,8 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import app.musiku.R
-import app.musiku.data.ThemeMode
 
-/** Convx's Latin typeface: the same four SF Pro Text weights it ships. */
+/** Latin typeface: the four SF Pro Text weights used across the UI. */
 val SfPro = FontFamily(
     Font(R.font.sf_pro_text_regular, FontWeight.Normal),
     Font(R.font.sf_pro_text_medium, FontWeight.Medium),
@@ -87,29 +84,7 @@ data class MusikuColors(
     val Shadow: Color,
 )
 
-// globals.css :root  — the light default.
-val LightColors = MusikuColors(
-    Window = Color(0xFFF2F2F7),
-    Surface = Color(0xFFFBFBFD),
-    Fill1 = Color(0x143C3C43), // rgba(60,60,67,.08)
-    Fill2 = Color(0x243C3C43), // rgba(60,60,67,.14)
-    Hairline = Color(0x243C3C43), // rgba(60,60,67,.14)
-    Track = Color(0x383C3C43), // rgba(60,60,67,.22)
-    Label1 = Color(0xFF1C1C1E),
-    Label2 = Color(0xFF55555D),
-    Label3 = Color(0xFF6C6C75),
-    Accent = Color(0xFFD60F33),
-    AccentFill = Color(0xFFD91A36),
-    AccentMuted = Color(0x1FD91A36), // rgba(217,26,54,.12)
-    GlassFill = Color(0x94FFFFFF), // rgba(255,255,255,.58)
-    GlassFillStrong = Color(0xCCFAFAFD), // rgba(250,250,253,.8)
-    GlassEdgeTop = Color(0xF2FFFFFF), // rgba(255,255,255,.95)
-    GlassEdge = Color(0x1A3C3C43), // rgba(60,60,67,.1)
-    GlassBase = Color(0xFFFFFFFF),
-    Shadow = Color(0x471E1E46), // rgba(30,30,70,.28)
-)
-
-// globals.css  —  prefers-color-scheme: dark
+// The single palette: the app is always dark, on every device and Android version.
 val DarkColors = MusikuColors(
     Window = Color(0xFF0B0B0E),
     Surface = Color(0xFF1C1C21),
@@ -166,40 +141,25 @@ object Tok {
     /** Opaque fallback for surfaces that must not be see-through (legacy call sites). */
     val Glass: Color @Composable get() = LocalMusikuColors.current.GlassFillStrong
 
-    /** Flat, fully opaque fill used by low-device mode (dark: black, light: white for legibility). */
-    val SolidGlass: Color @Composable get() = if (IsDark) Color(0xFF000000) else Color(0xFFFFFFFF)
+    /** Flat black plate used by low-device mode; the app is always dark. */
+    val SolidGlass: Color @Composable get() = Color(0xFF000000)
 }
 
 @Composable
-fun MusikuTheme(mode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
-    val dark = when (mode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
-    val colors = if (dark) DarkColors else LightColors
+fun MusikuTheme(content: @Composable () -> Unit) {
+    val colors = DarkColors
     CompositionLocalProvider(
         LocalMusikuColors provides colors,
-        LocalIsDark provides dark,
+        LocalIsDark provides true,
     ) {
         MaterialTheme(
-            colorScheme = if (dark) {
-                darkColorScheme(
-                    background = colors.Window,
-                    surface = colors.Surface,
-                    onBackground = colors.Label1,
-                    onSurface = colors.Label1,
-                    primary = colors.Accent,
-                )
-            } else {
-                lightColorScheme(
-                    background = colors.Window,
-                    surface = colors.Surface,
-                    onBackground = colors.Label1,
-                    onSurface = colors.Label1,
-                    primary = colors.Accent,
-                )
-            },
+            colorScheme = darkColorScheme(
+                background = colors.Window,
+                surface = colors.Surface,
+                onBackground = colors.Label1,
+                onSurface = colors.Label1,
+                primary = colors.Accent,
+            ),
             typography = MusikuTypography,
             content = content,
         )

@@ -43,7 +43,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.musiku.data.Library
-import app.musiku.data.ThemeMode
 import app.musiku.data.UpdateSource
 import app.musiku.data.openInBrowser
 import app.musiku.ui.LocalApp
@@ -51,7 +50,6 @@ import app.musiku.ui.LocalUi
 import app.musiku.ui.components.BackButton
 import app.musiku.ui.components.pressable
 import app.musiku.ui.theme.MIcons
-import app.musiku.ui.theme.MMenuIcons
 import app.musiku.ui.theme.Tok
 
 // iOS kicker colours, dark variants — the same set Convx's settings rows tile their glyphs with.
@@ -85,7 +83,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     val crossfade by app.library.crossfade.collectAsState()
     val cfSec by app.library.cfSec.collectAsState()
     val autoplay by app.library.autoplay.collectAsState()
-    val themeMode by app.library.themeMode.collectAsState()
     val lowDevice by app.library.lowDevice.collectAsState()
     var license by remember { mutableStateOf(false) }
 
@@ -150,20 +147,6 @@ fun SettingsScreen(onBack: () -> Unit) {
             item(key = "appearance") {
                 Spacer(Modifier.height(28.dp))
                 SettingsGroup("Tampilan") {
-                    SettingsRow(
-                        icon = MMenuIcons.Moon,
-                        tint = SysIndigo,
-                        title = "Tema",
-                        subtitle = "Ketuk untuk ganti",
-                        trailing = when (themeMode) {
-                            ThemeMode.SYSTEM -> "Sistem"
-                            ThemeMode.DARK -> "Gelap"
-                            ThemeMode.LIGHT -> "Terang"
-                        },
-                        chevron = false,
-                        onClick = { app.library.setThemeMode(nextThemeMode(themeMode)) },
-                    )
-                    SettingsDivider()
                     SettingsToggleRow(
                         icon = MIcons.Settings,
                         tint = SysOrange,
@@ -247,12 +230,6 @@ fun SettingsScreen(onBack: () -> Unit) {
             },
         )
     }
-}
-
-private fun nextThemeMode(cur: ThemeMode): ThemeMode = when (cur) {
-    ThemeMode.SYSTEM -> ThemeMode.DARK
-    ThemeMode.DARK -> ThemeMode.LIGHT
-    ThemeMode.LIGHT -> ThemeMode.SYSTEM
 }
 
 private fun nextCfSec(cur: Int): Int {

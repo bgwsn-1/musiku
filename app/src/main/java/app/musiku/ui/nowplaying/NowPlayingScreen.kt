@@ -62,7 +62,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -105,10 +104,7 @@ import app.musiku.model.RepeatMode
 import app.musiku.model.Track
 import app.musiku.R
 import app.musiku.ui.components.Artwork
-import app.musiku.ui.theme.DarkColors
-import app.musiku.ui.theme.LocalIsDark
 import app.musiku.ui.theme.LocalLowDevice
-import app.musiku.ui.theme.LocalMusikuColors
 import app.musiku.ui.theme.MIcons
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
@@ -234,17 +230,14 @@ fun NowPlayingScreen(
                 animationSpec = tween(160),
             ),
         ) {
-            // The player is always dark (Convx's .force-dark), even when the app uses light theme.
-            CompositionLocalProvider(LocalMusikuColors provides DarkColors, LocalIsDark provides true) {
-                PlayerMenu(
-                    track = track,
-                    state = state,
-                    actions = actions,
-                    dismiss = { menuOpen = false },
-                    maxHeight = maxHeight - 120.dp,
-                    haze = haze,
-                )
-            }
+            PlayerMenu(
+                track = track,
+                state = state,
+                actions = actions,
+                dismiss = { menuOpen = false },
+                maxHeight = maxHeight - 120.dp,
+                haze = haze,
+            )
         }
     }
 }
