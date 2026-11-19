@@ -2,6 +2,7 @@ package app.musiku.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -9,6 +10,39 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import app.musiku.R
+
+/** Convx's Latin typeface: the same four SF Pro Text weights it ships. */
+val SfPro = FontFamily(
+    Font(R.font.sf_pro_text_regular, FontWeight.Normal),
+    Font(R.font.sf_pro_text_medium, FontWeight.Medium),
+    Font(R.font.sf_pro_text_semibold, FontWeight.SemiBold),
+    Font(R.font.sf_pro_text_bold, FontWeight.Bold),
+)
+
+/** Every Material style carries [SfPro], so components and bare `Text` share one typeface. */
+private val MusikuTypography = Typography().let { t ->
+    t.copy(
+        displayLarge = t.displayLarge.copy(fontFamily = SfPro),
+        displayMedium = t.displayMedium.copy(fontFamily = SfPro),
+        displaySmall = t.displaySmall.copy(fontFamily = SfPro),
+        headlineLarge = t.headlineLarge.copy(fontFamily = SfPro),
+        headlineMedium = t.headlineMedium.copy(fontFamily = SfPro),
+        headlineSmall = t.headlineSmall.copy(fontFamily = SfPro),
+        titleLarge = t.titleLarge.copy(fontFamily = SfPro),
+        titleMedium = t.titleMedium.copy(fontFamily = SfPro),
+        titleSmall = t.titleSmall.copy(fontFamily = SfPro),
+        bodyLarge = t.bodyLarge.copy(fontFamily = SfPro),
+        bodyMedium = t.bodyMedium.copy(fontFamily = SfPro),
+        bodySmall = t.bodySmall.copy(fontFamily = SfPro),
+        labelLarge = t.labelLarge.copy(fontFamily = SfPro),
+        labelMedium = t.labelMedium.copy(fontFamily = SfPro),
+        labelSmall = t.labelSmall.copy(fontFamily = SfPro),
+    )
+}
 
 /** Tokens copied from the web build's `.force-dark` block (globals.css). */
 object Ink {
@@ -151,6 +185,7 @@ fun MusikuTheme(content: @Composable () -> Unit) {
                     primary = colors.Accent,
                 )
             },
+            typography = MusikuTypography,
             content = content,
         )
     }
