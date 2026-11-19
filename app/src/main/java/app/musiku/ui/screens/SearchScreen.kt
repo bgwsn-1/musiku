@@ -1,6 +1,5 @@
 package app.musiku.ui.screens
 
-import app.musiku.ui.theme.LocalLowDevice
 import app.musiku.ui.theme.MIcons
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -65,6 +64,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -87,6 +87,7 @@ import app.musiku.ui.components.pressable
 import app.musiku.ui.components.rememberLoad
 import app.musiku.ui.theme.Tok
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 
 private val TABS = listOf("Semua", "Lagu", "Video", "Album", "Artis")
@@ -220,15 +221,23 @@ fun SearchScreen() {
  */
 @Composable
 private fun HeroBackdrop(url: String) {
-    val lowDevice = LocalLowDevice.current
+    val context = LocalContext.current
+    // Convx bakes this once at 544px with a software bitmap; the Offscreen layer stops HWUI from
+    // re-running the 120dp blur whenever the glass clip changes. No low-device branch here — the
+    // source keeps the blur on every tier, and dropping it exposes the raw cover instead.
+    val request = ImageRequest.Builder(context)
+        .data(url)
+        .size(544, 544)
+        .allowHardware(false)
+        .build()
     AsyncImage(
-        model = url,
+        model = request,
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .then(if (lowDevice) Modifier else Modifier.blur(120.dp))
+            .blur(120.dp)
             .graphicsLayer { alpha = 0.55f },
     )
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
