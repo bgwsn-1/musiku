@@ -2,12 +2,15 @@ package app.musiku.ui.components
 
 import app.musiku.ui.theme.MIcons
 import app.musiku.ui.theme.SfIcons
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,17 +30,26 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -51,18 +63,33 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.fastRoundToInt
 import app.musiku.model.Track
 import app.musiku.ui.LocalApp
 import app.musiku.ui.Routes
+import app.musiku.ui.glass.backdrop.backdrops.layerBackdrop
+import app.musiku.ui.glass.backdrop.backdrops.rememberCombinedBackdrop
+import app.musiku.ui.glass.backdrop.backdrops.rememberLayerBackdrop
+import app.musiku.ui.glass.backdrop.drawBackdrop
+import app.musiku.ui.glass.backdrop.effects.lens
+import app.musiku.ui.glass.backdrop.highlight.Highlight
+import app.musiku.ui.glass.backdrop.isRenderEffectSupported
+import app.musiku.ui.glass.backdrop.shadow.InnerShadow
 import app.musiku.ui.nowplaying.LandingEchoShare
 import app.musiku.ui.nowplaying.LandingSquash
 import app.musiku.ui.nowplaying.LandingSpread
 import app.musiku.ui.nowplaying.MiniPlayerCornerRadius
 import app.musiku.ui.nowplaying.PlayerMorph
+import app.musiku.ui.theme.LocalGlassBackdrop
 import app.musiku.ui.theme.Tok
 import app.musiku.ui.theme.liquidGlass
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -78,6 +105,9 @@ private val DockBarInset = 6.dp
 private val DockItemGap = 4.dp
 private val DockInlineCircle = 60.dp
 private val DockExpandedHeight = DockPlayerHeight + DockGap + DockBarHeight
+
+// Convx insets the selection puck by its bar content padding (4dp) on every side.
+private val DockPuckInset = 4.dp
 
 // Convx's morph clocks (`BarMotion`): collapse 560ms, expand 470ms, both landing on one frame.
 private const val DockCollapseMorphMs = 560
@@ -357,6 +387,10 @@ private val SearchTab = Tabs.first { it.route == Routes.Search }
  * player's bounds morph between its expanded slot and the middle of the inline row. [inline] is
  * the scroll connection's target; the four clocks mirror Convx's stagger so the surfaces bounce
  * while the centre travel never overshoots.
+ *
+ * The selection pill is Convx's drag puck (`ExpandedTabs`): pressing grows it into a lens over the
+ * bar's own glass and icons, dragging moves it tab to tab with a damped spring and a velocity
+ * stretch, and releasing snaps it to the nearest tab and navigates there.
  */
 @Composable
 fun MorphDock(
@@ -371,6 +405,10 @@ fun MorphDock(
     val app = LocalApp.current
     val ps by app.player.ui.collectAsState()
     val hasPlayer = ps.current != null
+    val dark = isSystemInDarkTheme()
+    val appBackdrop = LocalGlassBackdrop.current
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
 
     val travel by animateFloatAsState(
         targetValue = if (inline) 1f else 0f,
@@ -412,6 +450,11 @@ fun MorphDock(
     val contentIndex = Tabs.indexOfFirst { it.route == contentTab }.coerceAtLeast(0)
     val otherContent = Tabs.indices.first { it != 1 && it != contentIndex }
 
+    // Convx keeps the puck on the last user-chosen tab and only moves it when navigation or a
+    // finished drag changes the selection.
+    var currentIndex by remember { mutableIntStateOf(selectedIndex) }
+    val onSelectNow = rememberUpdatedState(onSelect)
+
     val onTab: (Tab) -> Unit = { tab ->
         // Convx's inline circle expands first; navigating is the same click's second half.
         if (inline) onExpand()
@@ -423,8 +466,8 @@ fun MorphDock(
         val barY = dockHeight - DockBarHeight
         val barWidth = lerp(width, DockInlineCircle, surface)
         val expandedItem = (width - DockBarInset * 2 - DockItemGap * (Tabs.size - 1)) / Tabs.size
-        fun center(index: Int): Dp =
-            DockBarInset + (expandedItem + DockItemGap) * index + expandedItem / 2
+        val step = expandedItem + DockItemGap
+        fun center(index: Int): Dp = DockBarInset + step * index + expandedItem / 2
 
         // No player: Convx packs [tab][search] and centres the cluster instead of spanning.
         val packedX = (width - DockInlineCircle * 2 - DockGap) / 2
@@ -441,24 +484,115 @@ fun MorphDock(
         val otherCenter = lerp(center(otherContent), leftCenter, travel)
         val otherAlpha = (1f - travel * 1.6f).coerceIn(0f, 1f)
 
+        // Convx nudges the whole pill a few dp in the drag direction, eased and clamped, so a drag
+        // feels like tugging the bar instead of sliding a puck inside a static shell.
+        val stepPx = with(density) { step.toPx() }
+        val totalWidthPx = with(density) { width.toPx() }
+        val offsetAnimation = remember { Animatable(0f) }
+        val panelOffset = remember(density, totalWidthPx) {
+            derivedStateOf {
+                val fraction = (offsetAnimation.value / totalWidthPx).coerceIn(-1f, 1f)
+                with(density) { 4.dp.toPx() * fraction.sign * EaseOut.transform(abs(fraction)) }
+            }
+        }
+
+        // Break the construction-time self-reference: canDrag needs the animation's current value.
+        class DragHolder { var instance: DampedDragAnimation? = null }
+        val holder = remember { DragHolder() }
+        val drag = remember(scope, density, expandedItem, width) {
+            DampedDragAnimation(
+                animationScope = scope,
+                initialValue = currentIndex.toFloat(),
+                valueRange = 0f..(Tabs.size - 1).toFloat(),
+                visibilityThreshold = 0.001f,
+                initialScale = 1f,
+                pressedScale = 78f / 56f,
+                canDrag = { offset ->
+                    val anim = holder.instance ?: return@DampedDragAnimation true
+                    if (stepPx == 0f) return@DampedDragAnimation false
+                    val indicatorX = anim.value * stepPx
+                    val pad = with(density) { DockBarInset.toPx() }
+                    (pad + indicatorX + offset.x) in 0f..totalWidthPx
+                },
+                onDragStarted = {},
+                onDragStopped = {
+                    val target = targetValue.fastRoundToInt().coerceIn(0, Tabs.size - 1)
+                    if (currentIndex != target) {
+                        currentIndex = target
+                        onSelectNow.value(Tabs[target].route)
+                    } else {
+                        animateToValue(target.toFloat())
+                    }
+                    scope.launch { offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f)) }
+                },
+                onDrag = { _, dragAmount ->
+                    if (stepPx > 0f) {
+                        updateValue(
+                            (targetValue + dragAmount.x / stepPx)
+                                .coerceIn(0f, (Tabs.size - 1).toFloat())
+                        )
+                        scope.launch { offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x) }
+                    }
+                },
+            ).also { holder.instance = it }
+        }
+        // Selection changes also arrive from navigation. They only move the indicator; taps and
+        // completed drags navigate explicitly.
+        LaunchedEffect(drag) {
+            snapshotFlow { currentIndex }
+                .drop(1)
+                .collectLatest { drag.animateToValue(it.toFloat()) }
+        }
+        LaunchedEffect(selectedIndex) {
+            if (currentIndex != selectedIndex) currentIndex = selectedIndex
+        }
+        LaunchedEffect(inline) {
+            if (inline) offsetAnimation.snapTo(0f)
+        }
+
+        // Convx's finger sheen. The puck owns the gesture; this draws on the bar so the glow can
+        // sit under the puck's glass instead of on top of it.
+        val interactiveHighlight = remember(scope, drag, density, expandedItem) {
+            InteractiveHighlight(
+                animationScope = scope,
+                position = { size, _ ->
+                    Offset(
+                        with(density) { (DockBarInset + expandedItem * (drag.value + 0.5f)).toPx() } +
+                            panelOffset.value,
+                        size.height / 2f,
+                    )
+                },
+            )
+        }
+        // The puck samples the bar's own pixels (glass + icons). Convx only records the bar while
+        // pressed so an idle dock pays nothing for the lens.
+        val barBackdrop = rememberLayerBackdrop()
+        val pressed by remember(drag) { derivedStateOf { drag.pressProgress > 0f } }
+        val lensBackdrop = if (appBackdrop != null) {
+            rememberCombinedBackdrop(appBackdrop, barBackdrop)
+        } else {
+            null
+        }
+
         // Expanded tabs live inside the pill that shrinks into the left circle.
         Box(
             Modifier
                 .offset(x = barX, y = barY)
                 .width(barWidth)
                 .height(DockBarHeight)
-                .graphicsLayer { translationY = PlayerMorph.landingDipPx * LandingEchoShare }
+                .graphicsLayer {
+                    translationX = panelOffset.value
+                    translationY = PlayerMorph.landingDipPx * LandingEchoShare
+                    shape = CircleShape
+                    // Convx clips the pill only while it morphs; at rest the pressed puck is
+                    // allowed to grow past the bar's bounds.
+                    clip = travel > 0.001f || pressed
+                }
+                // Press-only recording; the puck has nothing to refract unless it is held.
+                .then(if (pressed) Modifier.layerBackdrop(barBackdrop) else Modifier)
                 .liquidGlass(CircleShape)
-                .clip(CircleShape),
+                .then(interactiveHighlight.modifier),
         ) {
-            Box(
-                Modifier
-                    .offset(x = DockBarInset + (expandedItem + DockItemGap) * selectedIndex)
-                    .width(expandedItem)
-                    .fillMaxHeight()
-                    .graphicsLayer { alpha = thumbAlpha }
-                    .background(Tok.Fill2, CircleShape),
-            )
             Tabs.forEachIndexed { index, tab ->
                 if (index == 1) return@forEachIndexed
                 val target = if (index == contentIndex) contentCenter else otherCenter
@@ -486,7 +620,10 @@ fun MorphDock(
                 .offset(x = searchCenter - itemWidth / 2, y = barY)
                 .width(itemWidth)
                 .height(DockBarHeight)
-                .graphicsLayer { translationY = PlayerMorph.landingDipPx * LandingEchoShare },
+                .graphicsLayer {
+                    translationX = panelOffset.value
+                    translationY = PlayerMorph.landingDipPx * LandingEchoShare
+                },
         ) {
             Box(
                 Modifier
@@ -516,6 +653,99 @@ fun MorphDock(
                     .width(playerWidth),
             )
         }
+
+        // The draggable puck: topmost pointer target in the dock. Taps still reach the tabs below
+        // (the drag inspector never consumes), drags move it, and the lens only exists while held.
+        Box(
+            Modifier
+                .offset(
+                    x = lerp(barX + DockBarInset, leftCenter - DockInlineCircle / 2, travel),
+                    y = barY + DockPuckInset,
+                )
+                .width(lerp(expandedItem, DockInlineCircle, travel))
+                .height(DockBarHeight - DockPuckInset * 2)
+                .graphicsLayer {
+                    translationX = drag.value * step.toPx() * (1f - travel)
+                    alpha = thumbAlpha
+                }
+                .then(if (inline) Modifier else interactiveHighlight.gestureModifier)
+                .then(if (inline) Modifier else drag.modifier)
+                .then(
+                    if (pressed && lensBackdrop != null && isRenderEffectSupported()) {
+                        Modifier.drawBackdrop(
+                            backdrop = lensBackdrop,
+                            // The bar's own shape family: puck and bar concentric.
+                            shape = { CircleShape },
+                            effects = {
+                                val progress = drag.pressProgress
+                                lens(
+                                    refractionHeight = 10.dp.toPx() * progress,
+                                    refractionAmount = 14.dp.toPx() * progress,
+                                    depthEffect = true,
+                                    chromaticAberration = true,
+                                    chromaticAberrationAmount = 0.5f,
+                                )
+                            },
+                            highlight = {
+                                Highlight(width = 1.dp, alpha = drag.pressProgress)
+                            },
+                            shadow = null,
+                            innerShadow = {
+                                val progress = drag.pressProgress
+                                if (progress > 0f) {
+                                    InnerShadow(
+                                        radius = 8.dp * progress,
+                                        color = Color.Black.copy(alpha = 0.15f),
+                                        alpha = progress,
+                                    )
+                                } else {
+                                    null
+                                }
+                            },
+                            layerBlock = {
+                                scaleX = drag.scaleX
+                                scaleY = drag.scaleY
+                                val velocity = drag.velocity / 10f
+                                scaleX /= 1f - (velocity * 0.75f).coerceIn(-0.2f, 0.2f)
+                                scaleY *= 1f - (velocity * 0.25f).coerceIn(-0.2f, 0.2f)
+                            },
+                            onDrawSurface = {
+                                val progress = drag.pressProgress
+                                drawRect(
+                                    if (dark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.1f),
+                                    alpha = 1f - progress,
+                                )
+                                drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                            },
+                        )
+                    } else {
+                        Modifier
+                            .graphicsLayer {
+                                scaleX = drag.scaleX
+                                scaleY = drag.scaleY
+                                // Apply velocity-based stretch to the puck outline.
+                                val velocity = drag.velocity / 10f
+                                scaleX /= 1f - (velocity * 0.75f).coerceIn(-0.2f, 0.2f)
+                                scaleY *= 1f - (velocity * 0.25f).coerceIn(-0.2f, 0.2f)
+                            }
+                            // The puck overlaps tab icons, so its surface stays translucent.
+                            .drawWithCache {
+                                // Bar's shape family, drawn not clipped.
+                                val outline = CircleShape.createOutline(size, layoutDirection, this)
+                                val wash = if (dark) {
+                                    Color.White.copy(alpha = 0.1f)
+                                } else {
+                                    Color.Black.copy(alpha = 0.1f)
+                                }
+                                onDrawBehind {
+                                    val progress = drag.pressProgress
+                                    drawOutline(outline, color = wash, alpha = 1f - progress)
+                                    drawOutline(outline, color = Color.Black.copy(alpha = 0.03f * progress))
+                                }
+                            }
+                    },
+                ),
+        )
     }
 }
 
