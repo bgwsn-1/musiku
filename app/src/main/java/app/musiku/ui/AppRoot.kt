@@ -60,9 +60,11 @@ import app.musiku.MusikuApp
 import app.musiku.data.ApkUpdater
 import app.musiku.data.UpdateDownload
 import app.musiku.data.UpdateInfo
+import app.musiku.data.UpdateNotifier
 import app.musiku.data.checkForUpdate
 import app.musiku.data.dismissUpdate
 import app.musiku.data.dismissedUpdateVersion
+import app.musiku.data.markUpdateNotified
 import app.musiku.data.openInBrowser
 import app.musiku.ui.components.AddToPlaylistSheet
 import app.musiku.ui.components.InfoDialog
@@ -165,6 +167,13 @@ fun AppRoot(app: MusikuApp) {
         if (dismissedUpdateVersion(ctx) == info.version) return@LaunchedEffect
         update = info
         updateVisible = true
+    }
+    // The card is visible again, so the status-bar copy is redundant — and this version counts as
+    // announced, which keeps the background worker from posting a duplicate later.
+    LaunchedEffect(updateVisible, update) {
+        if (!updateVisible) return@LaunchedEffect
+        UpdateNotifier.cancel(ctx)
+        update?.let { markUpdateNotified(ctx, it.version) }
     }
     // Settings asks on demand: ignore the earlier "Nanti", since this is an explicit tap.
     SideEffect {

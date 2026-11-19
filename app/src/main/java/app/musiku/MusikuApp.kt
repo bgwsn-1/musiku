@@ -7,6 +7,7 @@ import app.musiku.data.LyricsRepo
 import app.musiku.data.Spotify
 import app.musiku.data.SpotifyImporter
 import app.musiku.data.StreamResolver
+import app.musiku.data.UpdateWorker
 import app.musiku.data.YtMusic
 import app.musiku.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +37,11 @@ class MusikuApp : Application() {
 
     /** A playlist link arriving from the share sheet or a VIEW intent, picked up by AppRoot. */
     val pendingSpotify = MutableStateFlow<String?>(null)
+
+    override fun onCreate() {
+        super.onCreate()
+        UpdateWorker.schedule(this)
+    }
 
     fun handleIntent(intent: Intent?) {
         if (intent == null) return

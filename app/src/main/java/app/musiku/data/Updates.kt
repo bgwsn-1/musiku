@@ -48,6 +48,7 @@ data class UpdateDownload(
 
 private val Context.updateStore by preferencesDataStore(name = "updates")
 private val kDismissed = stringPreferencesKey("dismissedVersion")
+private val kNotified = stringPreferencesKey("notifiedVersion")
 
 /** Which version the user already said "nanti" to, so it does not ask again for the same one. */
 suspend fun dismissedUpdateVersion(ctx: Context): String? =
@@ -55,6 +56,14 @@ suspend fun dismissedUpdateVersion(ctx: Context): String? =
 
 suspend fun dismissUpdate(ctx: Context, version: String) {
     runCatching { ctx.updateStore.edit { it[kDismissed] = version } }
+}
+
+/** Last version a status-bar notification was posted for, so the worker stays quiet otherwise. */
+suspend fun notifiedUpdateVersion(ctx: Context): String? =
+    runCatching { ctx.updateStore.data.first()[kNotified] }.getOrNull()
+
+suspend fun markUpdateNotified(ctx: Context, version: String) {
+    runCatching { ctx.updateStore.edit { it[kNotified] = version } }
 }
 
 fun openInBrowser(ctx: Context, url: String) {
