@@ -40,7 +40,7 @@ val LocalGlassBackdrop = staticCompositionLocalOf<LayerBackdrop?> { null }
 /**
  * True while a screen transition is running. Glass then keeps replaying the capture it already
  * has instead of re-blurring the backdrop every frame — the capture is the expensive half of the
- * effect, and during a 300ms slide the stale blur is invisible next to the motion.
+ * effect, and during a 200ms fade the stale blur is invisible next to the dissolve.
  */
 val LocalGlassFrozen = staticCompositionLocalOf<() -> Boolean> { { false } }
 
@@ -96,10 +96,12 @@ fun Modifier.liquidGlass(
     }
 
     val density = LocalDensity.current
-    // Pooled nav-bar glass samples at full resolution, so the effects run at full resolution too.
-    val blurPx = with(density) { NavBlur.toPx() }
-    val lensHeightPx = with(density) { (MaxLensDp * NavLensHeight).toPx() }
-    val lensAmountPx = with(density) { (MaxLensDp * NavLensAmount).toPx() }
+    // The effect chain (saturation, blur, lens) runs on the surface's own capture. Recording it
+    // at half resolution cuts that work to a quarter of the pixels; the 3dp blur and the soft
+    // lens hide the upscale, and the rim/fill are still drawn at full resolution.
+    val blurPx = with(density) { NavBlur.toPx() } * GlassCaptureScale
+    val lensHeightPx = with(density) { (MaxLensDp * NavLensHeight).toPx() } * GlassCaptureScale
+    val lensAmountPx = with(density) { (MaxLensDp * NavLensAmount).toPx() } * GlassCaptureScale
 
     val rim = Color.White.copy(alpha = highlightAlpha)
     // Convx's DarkRimAlpha is 0.32 at the specular rim's own 0.55 baseline.
@@ -124,6 +126,7 @@ fun Modifier.liquidGlass(
             drawRect(base.copy(alpha = baseAlpha))
             if (neutralTint.alpha > 0f) drawRect(neutralTint)
         },
+        backdropScale = GlassCaptureScale,
         frozen = frozen,
     ).outerDarkRim(
         shape = shape,
@@ -134,6 +137,9 @@ fun Modifier.liquidGlass(
 }
 
 // --- Convx glass tokens, nav bar / mini player ------------------------------------------------
+
+/** Fraction of the glass surface's resolution the effect chain runs at (see `backdropScale`). */
+private const val GlassCaptureScale = 0.5f
 
 /** `ConvxDesignTokens.Glass.MaxLensDp` — lens values are fractions of this. */
 private val MaxLensDp = 48.dp

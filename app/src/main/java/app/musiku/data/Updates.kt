@@ -32,6 +32,9 @@ data class UpdateInfo(
     val pageUrl: String,
 )
 
+/** One release's body, used by the changelog shown after an update. */
+data class ReleaseNotes(val version: String, val notes: String)
+
 /**
  * State of the in-app update download, owned by `AppRoot` and drawn by the update card.
  * [file] is the finished APK; [needsPermission] means Android still has to be told that
@@ -49,6 +52,7 @@ data class UpdateDownload(
 private val Context.updateStore by preferencesDataStore(name = "updates")
 private val kDismissed = stringPreferencesKey("dismissedVersion")
 private val kNotified = stringPreferencesKey("notifiedVersion")
+private val kLastVersion = stringPreferencesKey("changelogSeenVersion")
 
 /** Which version the user already said "nanti" to, so it does not ask again for the same one. */
 suspend fun dismissedUpdateVersion(ctx: Context): String? =
@@ -65,6 +69,39 @@ suspend fun notifiedUpdateVersion(ctx: Context): String? =
 suspend fun markUpdateNotified(ctx: Context, version: String) {
     runCatching { ctx.updateStore.edit { it[kNotified] = version } }
 }
+
+/** Installed version the changelog was last handled for; null on the first launch ever. */
+suspend fun lastSeenVersion(ctx: Context): String? =
+    runCatching { ctx.updateStore.data.first()[kLastVersion] }.getOrNull()
+
+suspend fun setLastSeenVersion(ctx: Context, version: String) {
+    runCatching { ctx.updateStore.edit { it[kLastVersion] = version } }
+}
+
+/**
+ * Notes for every published release in `(fromExclusive, toInclusive]`, oldest first. GitHub lists
+ * newest first, so the result is reversed at the end. An empty list means GitHub answered but has
+ * nothing to show; a thrown error means the caller should not advance the last-seen version yet.
+ */
+suspend fun releaseNotesBetween(fromExclusive: String?, toInclusive: String): List<ReleaseNotes> =
+    withContext(Dispatchers.IO) {
+        val repo = UpdateSource.Repo
+        if (repo.isBlank() || toInclusive.isBlank()) return@withContext emptyList()
+        val body = getJson("https://api.github.com/repos/$repo/releases?per_page=30")
+        val releases = JSONArray(body)
+        val found = ArrayList<ReleaseNotes>()
+        for (i in 0 until releases.length()) {
+            val rel = runCatching { releases.getJSONObject(i) }.getOrNull() ?: continue
+            if (rel.optBoolean("draft") || rel.optBoolean("prerelease")) continue
+            val version = rel.optString("tag_name").trim().removePrefix("v").removePrefix("V")
+            if (version.isBlank() || isNewerVersion(version, toInclusive)) continue
+            if (fromExclusive != null && !isNewerVersion(version, fromExclusive)) continue
+            val notes = rel.optString("body").trim().take(4_000).takeIf { it.isNotEmpty() } ?: continue
+            found += ReleaseNotes(version, notes)
+        }
+        // Skipping many releases should not turn the dialog into the whole release history.
+        found.take(5).asReversed()
+    }
 
 fun openInBrowser(ctx: Context, url: String) {
     runCatching {

@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -114,6 +115,14 @@ fun Modifier.tappable(onClick: () -> Unit, description: String? = null): Modifie
 
 @Composable
 fun Eq(on: Boolean, color: Color = Color.White, modifier: Modifier = Modifier) {
+    if (!on) {
+        Row(modifier.height(14.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+            repeat(3) {
+                Box(Modifier.width(3.dp).fillMaxHeight(0.3f).clip(RoundedCornerShape(1.dp)).background(color))
+            }
+        }
+        return
+    }
     val t = rememberInfiniteTransition(label = "eq")
     Row(modifier.height(14.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
         for (i in 0 until 3) {
@@ -122,7 +131,21 @@ fun Eq(on: Boolean, color: Color = Color.White, modifier: Modifier = Modifier) {
                 infiniteRepeatable(tween(420 + i * 130), RepeatMode.Reverse),
                 label = "bar$i",
             )
-            Box(Modifier.width(3.dp).fillMaxHeight(if (on) h else 0.3f).clip(RoundedCornerShape(1.dp)).background(color))
+            // Scale the layer instead of re-measuring the bar. The playing row sits inside the
+            // page layer that feeds the glass backdrop, and a height animation re-lays out the
+            // page every frame — which re-records the whole backdrop, the top-bar blur and every
+            // glass surface with it. A layer-only change stays off that path.
+            Box(
+                Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .graphicsLayer {
+                        scaleY = h
+                        transformOrigin = TransformOrigin(0.5f, 1f)
+                    }
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(color),
+            )
         }
     }
 }

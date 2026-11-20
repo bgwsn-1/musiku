@@ -121,7 +121,7 @@ fun HomeScreen() {
     // The feed is swapped, not recoloured: when a filter's content lands the shelves lift and
     // fade into place together. The value is read at draw time, so shelves that compose later
     // (while scrolling) start at full opacity and never animate again. The first content is left
-    // alone: the screen itself is already sliding in, and a second animation on top of a page
+    // alone: the screen itself is already fading in, and a second animation on top of a page
     // transition is what made switching tabs feel like a stutter.
     val feedAnim = remember { Animatable(1f) }
     var shownFeed by remember { mutableStateOf<String?>(null) }

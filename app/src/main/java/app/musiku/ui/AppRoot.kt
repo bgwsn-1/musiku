@@ -1,5 +1,7 @@
 package app.musiku.ui
 
+import android.content.Context
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
@@ -9,9 +11,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,7 +44,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.chrisbanes.haze.HazeState
@@ -59,15 +58,21 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.musiku.MusikuApp
 import app.musiku.data.ApkUpdater
+import app.musiku.data.ReleaseNotes
 import app.musiku.data.UpdateDownload
 import app.musiku.data.UpdateInfo
 import app.musiku.data.UpdateNotifier
 import app.musiku.data.checkForUpdate
 import app.musiku.data.dismissUpdate
 import app.musiku.data.dismissedUpdateVersion
+import app.musiku.data.isNewerVersion
+import app.musiku.data.lastSeenVersion
 import app.musiku.data.markUpdateNotified
 import app.musiku.data.openInBrowser
+import app.musiku.data.releaseNotesBetween
+import app.musiku.data.setLastSeenVersion
 import app.musiku.ui.components.AddToPlaylistSheet
+import app.musiku.ui.components.ChangelogDialog
 import app.musiku.ui.components.InfoDialog
 import app.musiku.ui.components.MorphDock
 import app.musiku.ui.components.MusikuLoading
@@ -172,6 +177,40 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
         runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
             .getOrNull().orEmpty()
     }
+    // Changelog: the first launch of a new version reads the release bodies from GitHub. The
+    // last-seen version only advances after GitHub answered, so an offline launch retries next
+    // time instead of losing the notes for good.
+    var changelog by remember { mutableStateOf<List<ReleaseNotes>>(emptyList()) }
+    LaunchedEffect(versionName) {
+        if (versionName.isBlank()) return@LaunchedEffect
+        val last = lastSeenVersion(ctx)
+        if (last == null) {
+            // A fresh install has nothing to announce. The build that introduces this dialog is
+            // still an update for existing installs, but there is no previous version to diff
+            // against — show only the current release.
+            if (!hasBeenUpdated(ctx)) {
+                setLastSeenVersion(ctx, versionName)
+                return@LaunchedEffect
+            }
+            val notes = runCatching { releaseNotesBetween(null, versionName) }
+                .onFailure { Log.w("MusikuChangelog", "rollout notes fetch failed", it) }
+                .getOrNull() ?: return@LaunchedEffect
+            setLastSeenVersion(ctx, versionName)
+            val current = notes.filter { it.version == versionName }
+            if (current.isNotEmpty()) changelog = current
+            return@LaunchedEffect
+        }
+        if (last == versionName) return@LaunchedEffect
+        if (!isNewerVersion(versionName, last)) {
+            setLastSeenVersion(ctx, versionName)
+            return@LaunchedEffect
+        }
+        val notes = runCatching { releaseNotesBetween(last, versionName) }
+            .onFailure { Log.w("MusikuChangelog", "notes fetch failed", it) }
+            .getOrNull() ?: return@LaunchedEffect
+        setLastSeenVersion(ctx, versionName)
+        if (notes.isNotEmpty()) changelog = notes
+    }
     LaunchedEffect(versionName) {
         delay(5_000)
         val info = runCatching { checkForUpdate(versionName) }.getOrNull() ?: return@LaunchedEffect
@@ -224,7 +263,7 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
         // surface samples that layer (blur + AGSL lens) instead of approximating a backdrop.
         val glassBackdrop = rememberLayerBackdrop()
         // Re-blurring that layer is the expensive half of the effect, and a transition makes the
-        // page change on every frame. Glass replays its last capture for the length of the slide.
+        // page change on every frame. Glass replays its last capture for the length of the fade.
         val navFreeze = remember { NavTransitionFreeze() }
         LaunchedEffect(route) { navFreeze.mark() }
         Box(Modifier.fillMaxSize().background(Tok.Window)) {
@@ -451,9 +490,18 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
             ui.addToPlaylist?.let { t -> AddToPlaylistSheet(t) { ui.addToPlaylist = null } }
             ui.infoTrack?.let { t -> InfoDialog(t) { ui.infoTrack = null } }
             SpotifyImportDialog(ui.spotifyImportOpen) { ui.spotifyImportOpen = false }
+            if (changelog.isNotEmpty()) {
+                ChangelogDialog(versionName, changelog) { changelog = emptyList() }
+            }
         }
     }
 }
+
+/** True when this install has taken at least one update, not a fresh first install. */
+private fun hasBeenUpdated(ctx: Context): Boolean = runCatching {
+    val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+    info.lastUpdateTime - info.firstInstallTime > 60_000L
+}.getOrDefault(false)
 
 private fun selectTab(nav: androidx.navigation.NavController, route: String) {
     nav.navigate(route) {
@@ -463,33 +511,27 @@ private fun selectTab(nav: androidx.navigation.NavController, route: String) {
     }
 }
 
-// Push/pop travel: the incoming screen crosses the full width while the outgoing one covers 30%
-// of it, so the two read as depth instead of sliding in lockstep. Tabs use the same motion —
-// switching tabs is a page change, not a crossfade. No alpha on either side: a fade here reads as
-// a fast dissolve on heavy pages, and a slide-only transition also skips a compositing layer.
-private const val PushMillis = 300
-private const val PushParallax = 0.30f
+// Section changes are a cross-dissolve: tabs and pushed pages share the same motion. Sliding a
+// page that carries the glass backdrop moves its whole captured layer every frame, which is the
+// last thing those pages need; a fade also reads calmer when tabs change in place.
+private const val FadeMillis = 200
 
-// 300ms slide plus frame-delivery slop.
-private const val NavFreezeWindowNs = 360_000_000L
+// Fade plus frame-delivery slop; glass replays its capture for this window.
+private const val NavFreezeWindowNs = 280_000_000L
 
-private val pushSlide = tween<IntOffset>(PushMillis, easing = FastOutSlowInEasing)
-
-private fun parallax(fullWidth: Int): Int = -(fullWidth * PushParallax).toInt()
+private val navFade = tween<Float>(FadeMillis, easing = FastOutSlowInEasing)
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.enter(): EnterTransition =
-    slideInHorizontally(pushSlide) { it }
+    fadeIn(navFade)
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.exit(): ExitTransition =
-    slideOutHorizontally(pushSlide) { parallax(it) }
+    fadeOut(navFade)
 
-// Back mirrors the push: the screen underneath eases in from the left while the one on top
-// slides off to the right.
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(): EnterTransition =
-    slideInHorizontally(pushSlide) { parallax(it) }
+    fadeIn(navFade)
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(): ExitTransition =
-    slideOutHorizontally(pushSlide) { it }
+    fadeOut(navFade)
 
 /**
  * Marks the start of a screen transition. Draw-phase code asks [frozen] whether glass should

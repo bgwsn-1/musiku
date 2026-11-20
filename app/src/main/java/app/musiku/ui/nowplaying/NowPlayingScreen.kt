@@ -158,9 +158,9 @@ fun NowPlayingScreen(
     val bottomBarPad = (31.dp - navBottom).coerceAtLeast(4.dp)
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    // A canvas is 16:9 and the bleed look lays out for a square sleeve, so Convx falls back to the
-    // squared frame while a video is on screen (`overlayHandle = isHeroLook && !videoActive`).
-    val hero = look == PlayerLook.Hero && !rememberCanvasVideoActive(track)
+    // A canvas fills the bleed frame like the sleeve does: PlayerView crops a 16:9 video to the
+    // slot (resize_mode=zoom), so the full-bleed look no longer has to fall back to the card.
+    val hero = look == PlayerLook.Hero
     val order = remember(layoutOrder) { PlayerSlot.normalize(layoutOrder) }
     // Full bleed means "the art is the field", so it pins the gradient like Convx does.
     val fieldStyle = if (hero) PlayerBackgroundStyle.Gradient else background
@@ -529,53 +529,59 @@ private fun PlayerSeek(state: NowPlayingState, actions: NowPlayingActions) {
         disabledThumbColor = Color.White,
     )
 
-    // Keep a 23dp visual slot while the Slider retains its 48dp touch target.
-    Box(Modifier.fillMaxWidth().height(23.dp), contentAlignment = Alignment.Center) {
-        Slider(
-            value = value,
-            valueRange = 0f..duration.coerceAtLeast(1f),
-            onValueChange = { scrub = it },
-            onValueChangeFinished = {
-                scrub?.let(actions.onSeek)
-                scrub = null
-            },
-            enabled = duration > 0f,
-            colors = colors,
-            interactionSource = interaction,
-            thumb = { Spacer(Modifier.size(0.dp)) },
-            track = { sliderState ->
-                PlayerSliderTrack(
-                    sliderState = sliderState,
-                    colors = colors,
-                    trackHeight = trackHeight,
-                    modifier = Modifier
-                        .plusChrome()
-                        .graphicsLayer { alpha = 0.45f },
-                )
-            },
-            modifier = Modifier.fillMaxWidth().requiredHeight(48.dp),
-        )
-    }
+    // The labels are a sibling row, not a second child of the caller's Box: stacked in a Box they
+    // painted on top of the bar instead of sitting under it.
+    Column(Modifier.fillMaxWidth()) {
+        // Keep a 23dp visual slot while the Slider retains its 48dp touch target.
+        Box(Modifier.fillMaxWidth().height(23.dp), contentAlignment = Alignment.Center) {
+            Slider(
+                value = value,
+                valueRange = 0f..duration.coerceAtLeast(1f),
+                onValueChange = { scrub = it },
+                onValueChangeFinished = {
+                    scrub?.let(actions.onSeek)
+                    scrub = null
+                },
+                enabled = duration > 0f,
+                colors = colors,
+                interactionSource = interaction,
+                thumb = { Spacer(Modifier.size(0.dp)) },
+                track = { sliderState ->
+                    PlayerSliderTrack(
+                        sliderState = sliderState,
+                        colors = colors,
+                        trackHeight = trackHeight,
+                        modifier = Modifier
+                            .plusChrome()
+                            .graphicsLayer { alpha = 0.45f },
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().requiredHeight(48.dp),
+            )
+        }
 
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), // Align with internal slider padding
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RollingTime(
-            seconds = state.positionSec.roundToLong(),
-            prefix = "",
-            color = Color.White.copy(alpha = 0.3f),
-            modifier = Modifier.plusChrome(),
-            animate = active,
-        )
-        RollingTime(
-            seconds = if (duration > 0f) (duration - state.positionSec).roundToLong().coerceAtLeast(0) else 0,
-            prefix = "-",
-            color = Color.White.copy(alpha = 0.3f),
-            modifier = Modifier.plusChrome(),
-            animate = active,
-        )
+        // Clear of the capsule, with the row's own 18dp line box centred under it.
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), // Align with internal slider padding
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RollingTime(
+                seconds = state.positionSec.roundToLong(),
+                prefix = "",
+                color = Color.White.copy(alpha = 0.3f),
+                modifier = Modifier.plusChrome(),
+                animate = active,
+            )
+            RollingTime(
+                seconds = if (duration > 0f) (duration - state.positionSec).roundToLong().coerceAtLeast(0) else 0,
+                prefix = "-",
+                color = Color.White.copy(alpha = 0.3f),
+                modifier = Modifier.plusChrome(),
+                animate = active,
+            )
+        }
     }
 }
 
