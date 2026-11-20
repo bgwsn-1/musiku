@@ -631,4 +631,15 @@ object MIcons {
         )
     }.build()
 
+    val Video: ImageVector = ImageVector.Builder(
+        name = "Video", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24f, viewportHeight = 24f,
+    ).apply {
+        addPath(
+            PathParser().parsePathString("M17,10.5 V7 a1,1 0 0,0 -1,-1 H4 a1,1 0 0,0 -1,1 v10 a1,1 0 0,0 1,1 h12 a1,1 0 0,0 1,-1 v-3.5 l4,4 v-11 z").toNodes(),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+    }.build()
+
 }

@@ -104,6 +104,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kBookmarkedArtists = stringPreferencesKey("bookmarkedArtists")
     private val kLowDevice = booleanPreferencesKey("lowDevice")
     private val kCanvasEnabled = booleanPreferencesKey("canvasEnabled")
+    private val kArtistVideo = booleanPreferencesKey("artistVideo")
     private val kPlayerLook = intPreferencesKey("playerLook")
     private val kPlayerArtworkStyle = intPreferencesKey("playerArtworkStyle")
     private val kPlayerBackgroundStyle = intPreferencesKey("playerBackgroundStyle")
@@ -123,6 +124,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val _repeat = MutableStateFlow(0)
     private val _lowDevice = MutableStateFlow(false)
     private val _canvasEnabled = MutableStateFlow(false)
+    private val _artistVideo = MutableStateFlow(false)
     private val _playerLook = MutableStateFlow(PlayerLook.Squared)
     private val _playerArtworkStyle = MutableStateFlow(PlayerArtworkStyle.Card)
     private val _playerBackgroundStyle = MutableStateFlow(PlayerBackgroundStyle.Gradient)
@@ -147,6 +149,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     val lowDevice: StateFlow<Boolean> = _lowDevice
     /** Spotify Canvas behind the player artwork. Opt-in: it needs a Spotify session cookie. */
     val canvasEnabled: StateFlow<Boolean> = _canvasEnabled
+    /** Motion artwork in the artist hero. Opt-in: it streams an mp4 from a third-party service. */
+    val artistVideoEnabled: StateFlow<Boolean> = _artistVideo
     val playerLook: StateFlow<PlayerLook> = _playerLook
     val playerArtworkStyle: StateFlow<PlayerArtworkStyle> = _playerArtworkStyle
     val playerBackgroundStyle: StateFlow<PlayerBackgroundStyle> = _playerBackgroundStyle
@@ -194,6 +198,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             _repeat.value = (p[kRepeat] ?: 0).coerceIn(0, 2)
             _lowDevice.value = p[kLowDevice] ?: false
             _canvasEnabled.value = p[kCanvasEnabled] ?: false
+            _artistVideo.value = p[kArtistVideo] ?: false
             _playerLook.value = PlayerLook.entries.getOrElse(p[kPlayerLook] ?: 0) { PlayerLook.Squared }
             _playerArtworkStyle.value = PlayerArtworkStyle.from(p[kPlayerArtworkStyle] ?: 0)
             _playerBackgroundStyle.value = PlayerBackgroundStyle.from(p[kPlayerBackgroundStyle] ?: 1)
@@ -364,6 +369,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     fun setRepeat(mode: Int) { _repeat.value = mode; save { it[kRepeat] = mode } }
     fun setLowDevice(on: Boolean) { _lowDevice.value = on; save { it[kLowDevice] = on } }
     fun setCanvasEnabled(on: Boolean) { _canvasEnabled.value = on; save { it[kCanvasEnabled] = on } }
+    fun setArtistVideoEnabled(on: Boolean) { _artistVideo.value = on; save { it[kArtistVideo] = on } }
 
     // ── player design (Convx `PlayerLook` / `PlayerArtworkStyle` / `PlayerBackgroundStyle`) ──
     fun setPlayerLook(look: PlayerLook) {

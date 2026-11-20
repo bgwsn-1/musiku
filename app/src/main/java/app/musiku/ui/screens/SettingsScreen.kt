@@ -68,6 +68,7 @@ fun SettingsScreen(onBack: () -> Unit, onPlayerDesign: () -> Unit = {}) {
     val lowDevice by app.library.lowDevice.collectAsState()
     val look by app.library.playerLook.collectAsState()
     val canvasEnabled by app.library.canvasEnabled.collectAsState()
+    val artistVideoEnabled by app.library.artistVideoEnabled.collectAsState()
     val canvasStatus by app.canvas.status.collectAsState()
     var license by remember { mutableStateOf(false) }
 
@@ -140,18 +141,6 @@ fun SettingsScreen(onBack: () -> Unit, onPlayerDesign: () -> Unit = {}) {
                         onCheckedChange = { app.library.setCanvasEnabled(it) },
                         enabled = !lowDevice,
                     )
-                    if (canvasEnabled && !lowDevice) {
-                        SettingsDivider()
-                        SettingsRow(
-                            icon = MIcons.Info,
-                            tint = SysGray,
-                            title = "Status Canvas",
-                            subtitle = canvasStatus.ifBlank {
-                                "Buka layar pemutar untuk mencoba"
-                            },
-                            chevron = false,
-                        )
-                    }
                 }
             }
 
@@ -173,6 +162,16 @@ fun SettingsScreen(onBack: () -> Unit, onPlayerDesign: () -> Unit = {}) {
                         subtitle = "Matikan liquid glass & blur agar lebih ringan",
                         checked = lowDevice,
                         onCheckedChange = { app.library.setLowDevice(it) },
+                    )
+                    SettingsDivider()
+                    SettingsToggleRow(
+                        icon = MIcons.Video,
+                        tint = SysIndigo,
+                        title = "Video artis",
+                        subtitle = "Artwork bergerak di header artis. Dilewati di data seluler.",
+                        checked = artistVideoEnabled && !lowDevice,
+                        onCheckedChange = { app.library.setArtistVideoEnabled(it) },
+                        enabled = !lowDevice,
                     )
                 }
             }

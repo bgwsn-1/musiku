@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -570,6 +571,7 @@ fun ArtistHeroImage(
     pageColor: Color,
     modifier: Modifier = Modifier,
     heroScale: () -> Float = { 1f },
+    overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val lowDevice = LocalLowDevice.current
     BoxWithConstraints(modifier.fillMaxWidth()) {
@@ -588,10 +590,19 @@ fun ArtistHeroImage(
                     contentScale = ContentScale.FillBounds,
                     modifier = Modifier.matchParentSize(),
                 )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(side * ArtistArtworkExtent)
+                        .align(Alignment.TopCenter),
+                ) {
+                    overlay()
+                }
             } else {
                 Box(Modifier.fillMaxWidth().height(side * ArtistArtworkExtent).background(Color(0xFF3A3A3C))) {
                     if (!artworkUrl.isNullOrBlank()) Artwork(artworkUrl, Modifier.fillMaxSize())
                     else SfIcon(MIcons.Music, side * 0.18f, Color.White.copy(alpha = 0.3f))
+                    overlay()
                 }
                 if (!artworkUrl.isNullOrBlank()) {
                     Box(

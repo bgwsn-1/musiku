@@ -1,6 +1,8 @@
 package app.musiku.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
@@ -35,8 +37,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +57,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +66,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import app.musiku.model.Track
 import app.musiku.ui.LocalApp
 import app.musiku.ui.LocalUi
@@ -77,6 +84,7 @@ import app.musiku.ui.components.EmptyState
 import app.musiku.ui.components.FeaturedReleaseCard
 import app.musiku.ui.components.ArtistActionRow
 import app.musiku.ui.components.ArtistHeroImage
+import app.musiku.ui.components.ArtistVideo
 import app.musiku.ui.components.ArtistWordmark
 import app.musiku.ui.components.ArtistWordmarkFootInset
 import app.musiku.ui.components.ArtistWordmarkHeight
@@ -91,6 +99,8 @@ import app.musiku.ui.components.pressable
 import app.musiku.ui.components.heroPullZoom
 import app.musiku.ui.components.rememberHeroZoom
 import app.musiku.ui.components.rememberArtistArtworkBg
+import app.musiku.ui.components.rememberArtistVideoPlayer
+import app.musiku.ui.components.rememberArtistVideoUrl
 import app.musiku.ui.components.rememberLoad
 import app.musiku.ui.components.rememberPlaylistAppearance
 import app.musiku.ui.theme.LocalLowDevice
@@ -222,8 +232,26 @@ fun ArtistScreen(id: String, onBack: () -> Unit) {
     val heroZoom = rememberHeroZoom()
     val state by app.player.ui.collectAsState()
     val bookmarks by app.library.bookmarkedArtists.collectAsState()
+    val videoEnabled by app.library.artistVideoEnabled.collectAsState()
+    val lowDevice = LocalLowDevice.current
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val heroVisible by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumed by remember {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> resumed = true
+                Lifecycle.Event.ON_PAUSE -> resumed = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     DetailFrame(onBack) {
         when (val l = load) {
             is Load.Loading -> Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) { MusikuLoading() }
@@ -237,6 +265,18 @@ fun ArtistScreen(id: String, onBack: () -> Unit) {
                 val playingHere = state.playing && tracks.any { it.videoId == state.current?.videoId }
                 val featured = a.albums.firstOrNull() ?: a.singles.firstOrNull()
                 val topChrome = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp
+                val motionSong = a.topSongs.firstOrNull()
+                val motionUrl = rememberArtistVideoUrl(
+                    artist = a.name,
+                    song = motionSong?.title,
+                    album = motionSong?.album,
+                    duration = motionSong?.duration,
+                    enabled = videoEnabled && !lowDevice,
+                )
+                val motionPlayer = motionUrl?.let { rememberArtistVideoPlayer(it) }
+                LaunchedEffect(motionPlayer, heroVisible, resumed) {
+                    motionPlayer?.active = heroVisible && resumed
+                }
 
                 Box(Modifier.fillMaxSize().background(tint)) {
                     LazyColumn(
@@ -251,6 +291,17 @@ fun ArtistScreen(id: String, onBack: () -> Unit) {
                                     artworkUrl = art,
                                     pageColor = tint,
                                     heroScale = { heroZoom.scale },
+                                    overlay = {
+                                        val player = motionPlayer
+                                        if (player != null) {
+                                            val videoAlpha by animateFloatAsState(
+                                                targetValue = if (player.isReady) 1f else 0f,
+                                                animationSpec = tween(400),
+                                                label = "artistVideoAlpha",
+                                            )
+                                            ArtistVideo(player, Modifier.fillMaxSize().alpha(videoAlpha))
+                                        }
+                                    },
                                 )
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
