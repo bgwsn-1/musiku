@@ -94,6 +94,8 @@ dependencies {
     // player: Media3 = background playback + lock screen / notification controls
     val media3 = "1.4.1"
     implementation("androidx.media3:media3-exoplayer:$media3")
+    // Apple artist motion artwork is HLS (.m3u8); core exoplayer only handles progressive files.
+    implementation("androidx.media3:media3-exoplayer-hls:$media3")
     implementation("androidx.media3:media3-ui:$media3")
     implementation("androidx.media3:media3-session:$media3")
     implementation("androidx.media3:media3-datasource-okhttp:$media3")

@@ -2,6 +2,7 @@ package app.musiku
 
 import android.app.Application
 import android.content.Intent
+import app.musiku.data.AppleMotionVideo
 import app.musiku.data.ArtistArtworkVideo
 import app.musiku.data.Canvas
 import app.musiku.data.Library
@@ -37,6 +38,7 @@ class MusikuApp : Application() {
     val spotify: Spotify by lazy { Spotify(http) }
     val canvas: Canvas by lazy { Canvas(this, http) }
     val artistVideo: ArtistArtworkVideo by lazy { ArtistArtworkVideo(http) }
+    val appleMotionVideo: AppleMotionVideo by lazy { AppleMotionVideo(this, http) }
     val importer: SpotifyImporter by lazy { SpotifyImporter(spotify, yt, library) }
 
     /** A playlist link arriving from the share sheet or a VIEW intent, picked up by AppRoot. */

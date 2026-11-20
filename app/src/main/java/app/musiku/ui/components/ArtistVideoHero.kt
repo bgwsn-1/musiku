@@ -109,9 +109,10 @@ fun ArtistVideo(player: ArtistVideoPlayer, modifier: Modifier = Modifier) {
 }
 
 /**
- * Resolves the artist's motion artwork URL. Returns null when the feature is off, the artist has no
- * lookup key, the active network is metered, or the service has nothing for this artist. Failures
- * are silent by design: the caller keeps the static hero.
+ * Resolves the artist's motion artwork URL: Apple Music's catalog first, then the legacy
+ * artwork-reference service as a fallback. Returns null when the feature is off, the active network
+ * is metered, or neither source has anything for this artist. Failures are silent by design: the
+ * caller keeps the static hero.
  */
 @Composable
 fun rememberArtistVideoUrl(
@@ -126,9 +127,13 @@ fun rememberArtistVideoUrl(
     var url by remember(artist, song, album, duration, enabled) { mutableStateOf<String?>(null) }
     LaunchedEffect(artist, song, album, duration, enabled) {
         url = null
-        if (!enabled || song.isNullOrBlank()) return@LaunchedEffect
+        if (!enabled || artist.isBlank()) return@LaunchedEffect
         if (isMetered(context)) return@LaunchedEffect
-        url = app.artistVideo.lookup(song, artist, album, durationSeconds(duration))?.url
+        val appleUrl = app.appleMotionVideo.lookup(artist)
+        url = appleUrl ?: run {
+            if (song.isNullOrBlank()) null
+            else app.artistVideo.lookup(song, artist, album, durationSeconds(duration))?.url
+        }
     }
     return url
 }
