@@ -93,6 +93,7 @@ import app.musiku.ui.nowplaying.playerBackgroundAlpha
 import app.musiku.ui.nowplaying.playerContentAlpha
 import app.musiku.ui.screens.AlbumScreen
 import app.musiku.ui.screens.ArtistScreen
+import app.musiku.ui.screens.EqualizerScreen
 import app.musiku.ui.screens.ExploreScreen
 import app.musiku.ui.screens.GenreScreen
 import app.musiku.ui.screens.HomeScreen
@@ -304,10 +305,17 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                         composable(Routes.Library) { LibraryScreen() }
                         composable(Routes.Explore) { ExploreScreen() }
                         composable(Routes.Settings) {
-                            SettingsScreen(onBack = { nav.popBackStack() }, onPlayerDesign = { nav.navigate(Routes.PlayerDesign) })
+                            SettingsScreen(
+                                onBack = { nav.popBackStack() },
+                                onPlayerDesign = { nav.navigate(Routes.PlayerDesign) },
+                                onEqualizer = { nav.navigate(Routes.Equalizer) },
+                            )
                         }
                         composable(Routes.PlayerDesign) {
                             PlayerDesignScreen(onBack = { nav.popBackStack() })
+                        }
+                        composable(Routes.Equalizer) {
+                            EqualizerScreen(onBack = { nav.popBackStack() })
                         }
                         composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                             AlbumScreen(it.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })

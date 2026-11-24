@@ -13,11 +13,14 @@ import app.musiku.data.SpotifyImporter
 import app.musiku.data.StreamResolver
 import app.musiku.data.UpdateWorker
 import app.musiku.data.YtMusic
+import app.musiku.eq.CustomEqualizerAudioProcessor
 import app.musiku.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -35,6 +38,7 @@ class MusikuApp : Application() {
     val lyrics: LyricsRepo by lazy { LyricsRepo(http, yt) }
     val streams: StreamResolver by lazy { StreamResolver(http) }
     val library: Library by lazy { Library(this, scope) }
+    val eqProcessor: CustomEqualizerAudioProcessor by lazy { CustomEqualizerAudioProcessor() }
     val downloads: OfflineDownloads by lazy { OfflineDownloads(this, scope, streams, library) }
     val player: PlayerController by lazy { PlayerController(this, scope, library, yt) }
     val spotify: Spotify by lazy { Spotify(http) }
@@ -49,6 +53,12 @@ class MusikuApp : Application() {
     override fun onCreate() {
         super.onCreate()
         UpdateWorker.schedule(this)
+        scope.launch {
+            combine(library.eqEnabled, library.eqProfile) { enabled, profile -> enabled to profile }
+                .collect { (enabled, profile) ->
+                    if (enabled) eqProcessor.applyProfile(profile) else eqProcessor.disable()
+                }
+        }
     }
 
     fun handleIntent(intent: Intent?) {

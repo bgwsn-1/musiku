@@ -57,7 +57,11 @@ import app.musiku.ui.theme.Tok
  * glyph tile per row, a footnote label above each group, and the version pinned at the bottom.
  */
 @Composable
-fun SettingsScreen(onBack: () -> Unit, onPlayerDesign: () -> Unit = {}) {
+fun SettingsScreen(
+    onBack: () -> Unit,
+    onPlayerDesign: () -> Unit = {},
+    onEqualizer: () -> Unit = {},
+) {
     val app = LocalApp.current
     val ui = LocalUi.current
     val ctx = LocalContext.current
@@ -68,6 +72,8 @@ fun SettingsScreen(onBack: () -> Unit, onPlayerDesign: () -> Unit = {}) {
     val lowDevice by app.library.lowDevice.collectAsState()
     val look by app.library.playerLook.collectAsState()
     val canvasEnabled by app.library.canvasEnabled.collectAsState()
+    val eqEnabled by app.library.eqEnabled.collectAsState()
+    val eqPreset by app.library.eqPreset.collectAsState()
     val artistVideoEnabled by app.library.artistVideoEnabled.collectAsState()
     val canvasStatus by app.canvas.status.collectAsState()
     var license by remember { mutableStateOf(false) }
@@ -127,6 +133,14 @@ fun SettingsScreen(onBack: () -> Unit, onPlayerDesign: () -> Unit = {}) {
                             onClick = { app.library.setCfSec(nextCfSec(cfSec)) },
                         )
                     }
+                    SettingsDivider()
+                    SettingsChoiceRow(
+                        icon = MIcons.Crossfade,
+                        tint = SysBlue,
+                        title = "Equalizer",
+                        value = if (eqEnabled) eqPreset else "Mati",
+                        onClick = onEqualizer,
+                    )
                     SettingsDivider()
                     SettingsToggleRow(
                         icon = MIcons.Disc,

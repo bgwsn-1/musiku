@@ -50,6 +50,7 @@ object Routes {
     const val Explore = "explore"
     const val Settings = "settings"
     const val PlayerDesign = "player_design"
+    const val Equalizer = "equalizer"
     fun album(id: String) = "album/$id"
     fun artist(id: String) = "artist/$id"
     fun playlist(id: String) = "playlist/$id"

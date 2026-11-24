@@ -7,6 +7,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import app.musiku.eq.EqualizerBand
+import app.musiku.eq.EqualizerFilterType
+import app.musiku.eq.EqualizerPresets
+import app.musiku.eq.EqualizerProfile
 import app.musiku.model.Playlist
 import app.musiku.model.PlayHistoryEntry
 import app.musiku.model.Track
@@ -111,6 +115,9 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kPlayerBackgroundStyle = intPreferencesKey("playerBackgroundStyle")
     private val kPlayerLayoutOrder = stringPreferencesKey("playerLayoutOrder")
     private val kPlayerLayoutHidden = stringPreferencesKey("playerLayoutHidden")
+    private val kEqEnabled = booleanPreferencesKey("eqEnabled")
+    private val kEqPreset = stringPreferencesKey("eqPreset")
+    private val kEqProfile = stringPreferencesKey("eqProfile")
 
     private val _liked = MutableStateFlow<List<Track>>(emptyList())
     private val _downloadedTracks = MutableStateFlow<List<Track>>(emptyList())
@@ -132,6 +139,9 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val _playerBackgroundStyle = MutableStateFlow(PlayerBackgroundStyle.Gradient)
     private val _playerLayoutOrder = MutableStateFlow(PlayerSlot.DefaultOrder)
     private val _playerLayoutHidden = MutableStateFlow(emptySet<PlayerSlot>())
+    private val _eqEnabled = MutableStateFlow(false)
+    private val _eqPreset = MutableStateFlow("Flat")
+    private val _eqProfile = MutableStateFlow(EqualizerProfile())
 
     /** Spotify track URI → the YouTube Music track it was matched to, so syncs skip old work. */
     private val spotifyCache = java.util.concurrent.ConcurrentHashMap<String, Track>()
@@ -161,6 +171,9 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     val playerBackgroundStyle: StateFlow<PlayerBackgroundStyle> = _playerBackgroundStyle
     val playerLayoutOrder: StateFlow<List<PlayerSlot>> = _playerLayoutOrder
     val playerLayoutHidden: StateFlow<Set<PlayerSlot>> = _playerLayoutHidden
+    val eqEnabled: StateFlow<Boolean> = _eqEnabled
+    val eqPreset: StateFlow<String> = _eqPreset
+    val eqProfile: StateFlow<EqualizerProfile> = _eqProfile
 
     @Volatile var loaded = false
         private set
@@ -210,6 +223,9 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             _playerBackgroundStyle.value = PlayerBackgroundStyle.from(p[kPlayerBackgroundStyle] ?: 1)
             _playerLayoutOrder.value = PlayerSlot.orderFrom(p[kPlayerLayoutOrder])
             _playerLayoutHidden.value = PlayerSlot.hiddenFrom(p[kPlayerLayoutHidden])
+            _eqEnabled.value = p[kEqEnabled] ?: false
+            _eqPreset.value = p[kEqPreset] ?: "Flat"
+            _eqProfile.value = parseEqProfile(p[kEqProfile]) ?: EqualizerProfile()
             val toRun = synchronized(pendingLock) {
                 loaded = true
                 pendingMutations.toList().also { pendingMutations.clear() }
@@ -454,6 +470,96 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
         val v = hidden.filter { it.hideable }.toSet()
         _playerLayoutHidden.value = v
         save { it[kPlayerLayoutHidden] = PlayerSlot.serializeHidden(v) }
+    }
+
+    // ── equalizer ────────────────────────────────────────────────────────────
+    fun setEqEnabled(on: Boolean) = afterLoad {
+        _eqEnabled.value = on
+        save { it[kEqEnabled] = on }
+    }
+
+    fun selectEqPreset(name: String) = afterLoad {
+        val profile = EqualizerPresets.Presets[name] ?: return@afterLoad
+        _eqPreset.value = name
+        _eqProfile.value = profile
+        saveEq(name, profile)
+    }
+
+    fun setEqBandGain(index: Int, gainDb: Double) = afterLoad {
+        val cur = _eqProfile.value
+        if (index !in cur.bands.indices) return@afterLoad
+        val updated = cur.bands.toMutableList().also {
+            it[index] = it[index].copy(gain = gainDb.coerceIn(-12.0, 12.0))
+        }
+        val next = cur.copy(bands = updated)
+        _eqPreset.value = "Custom"
+        _eqProfile.value = next
+        saveEq("Custom", next)
+    }
+
+    fun setEqPreamp(preampDb: Double) = afterLoad {
+        val next = _eqProfile.value.copy(preamp = preampDb.coerceIn(-12.0, 6.0))
+        _eqProfile.value = next
+        saveEq(_eqPreset.value, next)
+    }
+
+    fun importEqProfile(name: String, profile: EqualizerProfile) = afterLoad {
+        _eqPreset.value = name
+        _eqProfile.value = profile
+        _eqEnabled.value = true
+        save {
+            it[kEqEnabled] = true
+            it[kEqPreset] = name
+            it[kEqProfile] = serializeEqProfile(profile)
+        }
+    }
+
+    fun resetEq() = afterLoad {
+        val flat = EqualizerProfile()
+        _eqPreset.value = "Flat"
+        _eqProfile.value = flat
+        saveEq("Flat", flat)
+    }
+
+    private fun saveEq(preset: String, profile: EqualizerProfile) = save {
+        it[kEqPreset] = preset
+        it[kEqProfile] = serializeEqProfile(profile)
+    }
+
+    private fun serializeEqProfile(p: EqualizerProfile): String {
+        val arr = JSONArray()
+        p.bands.forEach { b ->
+            arr.put(
+                JSONObject()
+                    .put("f", b.frequency)
+                    .put("g", b.gain)
+                    .put("q", b.q)
+                    .put("t", b.filterType.name)
+                    .put("e", b.enabled),
+            )
+        }
+        return JSONObject().put("preamp", p.preamp).put("bands", arr).toString()
+    }
+
+    private fun parseEqProfile(raw: String?): EqualizerProfile? {
+        if (raw.isNullOrBlank()) return null
+        return runCatching {
+            val o = JSONObject(raw)
+            val preamp = o.optDouble("preamp", 0.0)
+            val arr = o.optJSONArray("bands") ?: return null
+            val bands = (0 until arr.length()).mapNotNull { i ->
+                val b = arr.optJSONObject(i) ?: return@mapNotNull null
+                EqualizerBand(
+                    frequency = b.optDouble("f", 1000.0),
+                    gain = b.optDouble("g", 0.0),
+                    q = b.optDouble("q", 1.41),
+                    filterType = runCatching { EqualizerFilterType.valueOf(b.optString("t", "PK")) }
+                        .getOrDefault(EqualizerFilterType.PK),
+                    enabled = b.optBoolean("e", true),
+                )
+            }
+            if (bands.isEmpty()) null else EqualizerProfile(preamp, bands)
+        }.getOrNull()
     }
 
     companion object {
