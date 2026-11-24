@@ -214,8 +214,10 @@ private fun LibraryHome(onOpen: (LibraryPage) -> Unit, onHistory: () -> Unit) {
                 LibraryCategory("Lagu", SfLibraryIcons.MusicNote) { onOpen(LibraryPage.Songs) }
                 LibraryCategory("Disukai", SfLibraryIcons.Heart) { onOpen(LibraryPage.Liked) }
                 LibraryCategory("Unduhan", MIcons.Download) { onOpen(LibraryPage.Downloads) }
+                LibraryCategory("Statistik & Replay", MIcons.Music) { ui.navigate(Routes.Stats) }
                 LibraryCategory("Riwayat", SfLibraryIcons.Clock) { onHistory() }
-                LibraryCategory("Impor Spotify", SfLibraryIcons.Link) { ui.spotifyImportOpen = true }
+                LibraryCategory("Spotify Saya", SfLibraryIcons.Link) { ui.navigate(Routes.SpotifyLibrary) }
+                LibraryCategory("Impor Link Spotify", MIcons.Download) { ui.spotifyImportOpen = true }
             }
         }
 

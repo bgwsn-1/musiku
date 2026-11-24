@@ -9,6 +9,7 @@ import app.musiku.data.Library
 import app.musiku.data.LyricsRepo
 import app.musiku.data.OfflineDownloads
 import app.musiku.data.Spotify
+import app.musiku.data.SpotifyAuth
 import app.musiku.data.SpotifyImporter
 import app.musiku.data.StreamResolver
 import app.musiku.data.UpdateWorker
@@ -43,7 +44,8 @@ class MusikuApp : Application() {
     val player: PlayerController by lazy {
         PlayerController(this, scope, library, yt, onTrackError = { streams.invalidate(it) })
     }
-    val spotify: Spotify by lazy { Spotify(http) }
+    val spotifyAuth: SpotifyAuth by lazy { SpotifyAuth(this, scope, http) }
+    val spotify: Spotify by lazy { Spotify(http, spotifyAuth) }
     val canvas: Canvas by lazy { Canvas(this, http) }
     val artistVideo: ArtistArtworkVideo by lazy { ArtistArtworkVideo(http) }
     val appleMotionVideo: AppleMotionVideo by lazy { AppleMotionVideo(this, http) }

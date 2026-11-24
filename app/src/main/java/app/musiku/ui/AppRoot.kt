@@ -107,6 +107,9 @@ import app.musiku.ui.screens.QueuePanel
 import app.musiku.ui.screens.RadioScreen
 import app.musiku.ui.screens.RadioStationScreen
 import app.musiku.ui.screens.SearchScreen
+import app.musiku.ui.screens.SpotifyLibraryScreen
+import app.musiku.ui.screens.SpotifyLoginScreen
+import app.musiku.ui.screens.StatsScreen
 import app.musiku.ui.screens.activeLyricIndex
 import app.musiku.ui.screens.rememberLyrics
 import app.musiku.ui.theme.LocalGlassBackdrop
@@ -309,6 +312,9 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                                 onBack = { nav.popBackStack() },
                                 onPlayerDesign = { nav.navigate(Routes.PlayerDesign) },
                                 onEqualizer = { nav.navigate(Routes.Equalizer) },
+                                onSpotifyAccount = {
+                                    nav.navigate(if (app.spotifyAuth.isLoggedIn) Routes.SpotifyLibrary else Routes.SpotifyLogin)
+                                },
                             )
                         }
                         composable(Routes.PlayerDesign) {
@@ -316,6 +322,25 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                         }
                         composable(Routes.Equalizer) {
                             EqualizerScreen(onBack = { nav.popBackStack() })
+                        }
+                        composable(Routes.Stats) {
+                            StatsScreen(onBack = { nav.popBackStack() })
+                        }
+                        composable(Routes.SpotifyLogin) {
+                            SpotifyLoginScreen(
+                                onBack = { nav.popBackStack() },
+                                onLoggedIn = {
+                                    nav.navigate(Routes.SpotifyLibrary) {
+                                        popUpTo(Routes.SpotifyLogin) { inclusive = true }
+                                    }
+                                },
+                            )
+                        }
+                        composable(Routes.SpotifyLibrary) {
+                            SpotifyLibraryScreen(
+                                onBack = { nav.popBackStack() },
+                                onOpenLogin = { nav.navigate(Routes.SpotifyLogin) },
+                            )
                         }
                         composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                             AlbumScreen(it.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })

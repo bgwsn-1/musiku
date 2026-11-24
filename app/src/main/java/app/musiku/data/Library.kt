@@ -11,6 +11,7 @@ import app.musiku.eq.EqualizerBand
 import app.musiku.eq.EqualizerFilterType
 import app.musiku.eq.EqualizerPresets
 import app.musiku.eq.EqualizerProfile
+import app.musiku.model.PlayEvent
 import app.musiku.model.Playlist
 import app.musiku.model.PlayHistoryEntry
 import app.musiku.model.Track
@@ -89,6 +90,47 @@ private fun List<PlayHistoryEntry>.toHistoryJson(): JSONArray = JSONArray().also
     }
 }
 
+private fun parsePlayEvents(raw: String?): List<PlayEvent> {
+    if (raw.isNullOrEmpty()) return emptyList()
+    return runCatching {
+        val a = JSONArray(raw)
+        (0 until a.length()).mapNotNull { i ->
+            runCatching {
+                val o = a.getJSONObject(i)
+                val id = o.optString("id")
+                val title = o.optString("title")
+                if (id.isEmpty() || title.isEmpty()) return@mapNotNull null
+                PlayEvent(
+                    id = id,
+                    title = title,
+                    artist = o.optString("artist").ifEmpty { null },
+                    artistId = o.optString("artistId").ifEmpty { null },
+                    album = o.optString("album").ifEmpty { null },
+                    thumbnail = o.optString("thumbnail").ifEmpty { null },
+                    durationMs = o.optLong("durationMs"),
+                    playedAt = o.optLong("playedAt"),
+                )
+            }.getOrNull()
+        }
+    }.getOrDefault(emptyList())
+        .sortedByDescending { it.playedAt }
+        .take(Library.EVENTS_LIMIT)
+}
+
+private fun List<PlayEvent>.toPlayEventsJson(): JSONArray = JSONArray().also { a ->
+    forEach { e ->
+        a.put(
+            JSONObject().put("id", e.id).put("title", e.title)
+                .putOpt("artist", e.artist)
+                .putOpt("artistId", e.artistId)
+                .putOpt("album", e.album)
+                .putOpt("thumbnail", e.thumbnail)
+                .put("durationMs", e.durationMs)
+                .put("playedAt", e.playedAt),
+        )
+    }
+}
+
 /**
  * Everything the web build keeps in localStorage: favourites, playlists, recents and the
  * player settings. Held in memory as StateFlows, mirrored to DataStore on every change.
@@ -99,6 +141,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kPlaylists = stringPreferencesKey("playlists")
     private val kRecent = stringPreferencesKey("recent")
     private val kPlayHistory = stringPreferencesKey("playHistory")
+    private val kPlayEvents = stringPreferencesKey("playEvents")
     private val kHistoryEnabled = booleanPreferencesKey("historyEnabled")
     private val kCrossfade = booleanPreferencesKey("crossfade")
     private val kCfSec = intPreferencesKey("crossfadeSec")
@@ -125,6 +168,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val _playlists = MutableStateFlow<List<Playlist>>(emptyList())
     private val _recent = MutableStateFlow<List<Track>>(emptyList())
     private val _playHistory = MutableStateFlow<List<PlayHistoryEntry>>(emptyList())
+    private val _playEvents = MutableStateFlow<List<PlayEvent>>(emptyList())
     private val _historyEnabled = MutableStateFlow(true)
     private val _crossfade = MutableStateFlow(false)
     private val _cfSec = MutableStateFlow(DEFAULT_CF_SEC)
@@ -155,6 +199,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     val playlists: StateFlow<List<Playlist>> = _playlists
     val recent: StateFlow<List<Track>> = _recent
     val playHistory: StateFlow<List<PlayHistoryEntry>> = _playHistory
+    val playEvents: StateFlow<List<PlayEvent>> = _playEvents
     val historyEnabled: StateFlow<Boolean> = _historyEnabled
     val crossfade: StateFlow<Boolean> = _crossfade
     val cfSec: StateFlow<Int> = _cfSec
@@ -189,6 +234,21 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             }.getOrDefault(emptySet())
             _recent.value = parseTracks(p[kRecent])
             _playHistory.value = parseHistory(p[kPlayHistory])
+            val loadedEvents = parsePlayEvents(p[kPlayEvents])
+            _playEvents.value = if (loadedEvents.isEmpty() && _playHistory.value.isNotEmpty()) {
+                _playHistory.value.map {
+                    PlayEvent(
+                        id = it.id,
+                        title = it.title,
+                        artist = it.artist,
+                        thumbnail = it.thumbnail,
+                        durationMs = it.durationMs,
+                        playedAt = it.playedAt,
+                    )
+                }
+            } else {
+                loadedEvents
+            }
             _historyEnabled.value = p[kHistoryEnabled] ?: true
             _playlists.value = runCatching {
                 val a = JSONArray(p[kPlaylists] ?: "[]")
@@ -266,6 +326,9 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private fun savePlayHistory() = save { p ->
         runCatching { p[kPlayHistory] = _playHistory.value.toHistoryJson().toString() }
     }
+    private fun savePlayEvents() = save { p ->
+        runCatching { p[kPlayEvents] = _playEvents.value.toPlayEventsJson().toString() }
+    }
     private fun savePlaylists() = save { p ->
         val a = JSONArray()
         _playlists.value.forEach { pl ->
@@ -336,6 +399,19 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
         )
         _playHistory.value = (listOf(entry) + _playHistory.value.filterNot { it.id == entry.id }).take(HISTORY_LIMIT)
         savePlayHistory()
+
+        val ev = PlayEvent(
+            id = t.videoId,
+            title = t.title,
+            artist = t.artist?.ifEmpty { null },
+            artistId = t.artistId?.ifEmpty { null },
+            album = t.album?.ifEmpty { null },
+            thumbnail = t.thumbs?.ifEmpty { null },
+            durationMs = durationMs.coerceAtLeast(0L),
+            playedAt = entry.playedAt,
+        )
+        _playEvents.value = (listOf(ev) + _playEvents.value).take(EVENTS_LIMIT)
+        savePlayEvents()
     }
 
     fun removeHistoryEntry(id: String) = afterLoad {
@@ -565,6 +641,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     companion object {
         /** JSON string in DataStore is capped well below the ~5 MB localStorage budget. */
         const val HISTORY_LIMIT = 300
+        const val EVENTS_LIMIT = 2000
         const val DEFAULT_CF_SEC = 4
         val CF_PRESETS = listOf(2, 4, 6, 8, 10, 12)
     }

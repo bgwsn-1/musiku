@@ -29,6 +29,27 @@ data class PlayHistoryEntry(
     )
 }
 
+/** Individual play event for Statistics / Musiku Replay aggregation across time periods. */
+data class PlayEvent(
+    val id: String,
+    val title: String,
+    val artist: String? = null,
+    val artistId: String? = null,
+    val album: String? = null,
+    val thumbnail: String? = null,
+    val durationMs: Long = 0L,
+    val playedAt: Long = 0L,
+) {
+    fun toTrack(): Track = Track(
+        videoId = id,
+        title = title,
+        artist = artist?.ifEmpty { null },
+        album = album?.ifEmpty { null },
+        artistId = artistId?.ifEmpty { null },
+        thumbs = thumbnail?.ifEmpty { null },
+    )
+}
+
 data class LyricLine(val timeSec: Float, val text: String)
 
 data class AlbumSummary(

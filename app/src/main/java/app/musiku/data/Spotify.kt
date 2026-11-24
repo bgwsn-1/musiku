@@ -50,7 +50,7 @@ data class SpotifyPlaylist(
  * and the embed only paints the first ~100 tracks. If Spotify changes the embed markup this
  * parser stops working; [playlist] then throws a message the import sheet can display.
  */
-class Spotify(private val http: OkHttpClient) {
+class Spotify(private val http: OkHttpClient, private val auth: SpotifyAuth? = null) {
 
     /** True when [input] plausibly contains a Spotify playlist (used to gate share intents). */
     fun looksLikePlaylist(input: String): Boolean =
@@ -76,6 +76,9 @@ class Spotify(private val http: OkHttpClient) {
     }
 
     suspend fun playlist(id: String): SpotifyPlaylist = withContext(Dispatchers.IO) {
+        if (auth?.isLoggedIn == true) {
+            runCatching { return@withContext auth.playlistTracks(id) }
+        }
         val req = Request.Builder()
             .url("https://open.spotify.com/embed/playlist/$id")
             .header("User-Agent", UA)
@@ -171,6 +174,8 @@ class SpotifyImporter(
 
     fun import(link: String) = start(link, null)
 
+    fun importLiked(auth: SpotifyAuth) = startDirect { auth.likedTracks() }
+
     /** Re-fetch a playlist already imported from Spotify, keeping its local id and name. */
     fun sync(playlist: Playlist) {
         val sourceId = playlist.sourceId ?: return
@@ -189,6 +194,21 @@ class SpotifyImporter(
         _state.value = SpotifyImportState.Idle
     }
 
+    private fun startDirect(fetch: suspend () -> SpotifyPlaylist) {
+        job?.cancel()
+        job = scope.launch {
+            _state.value = SpotifyImportState.Working(null, 0, 0, false)
+            try {
+                val remote = fetch()
+                runMatch(remote, null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = SpotifyImportState.Failed(e.message ?: "Gagal membaca Spotify.")
+            }
+        }
+    }
+
     private fun start(input: String, syncTargetId: String?) {
         job?.cancel()
         job = scope.launch {
@@ -202,6 +222,16 @@ class SpotifyImporter(
                     return@launch
                 }
                 val remote = spotify.playlist(id)
+                runMatch(remote, syncTargetId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = SpotifyImportState.Failed(e.message ?: "Gagal mengimpor playlist Spotify.")
+            }
+        }
+    }
+
+    private suspend fun runMatch(remote: SpotifyPlaylist, syncTargetId: String?) {
                 library.awaitReady()
 
                 val total = remote.tracks.size
@@ -237,7 +267,7 @@ class SpotifyImporter(
                     _state.value = SpotifyImportState.Failed(
                         "Tidak ada lagu yang ketemu di YouTube Music. Coba playlist lain."
                     )
-                    return@launch
+                    return
                 }
 
                 library.saveSpotifyMatches(cached)
@@ -249,7 +279,7 @@ class SpotifyImporter(
                 }
                 if (playlist == null) {
                     _state.value = SpotifyImportState.Failed("Playlist sudah dihapus sebelum import selesai.")
-                    return@launch
+                    return
                 }
                 _state.value = SpotifyImportState.Done(
                     playlistId = playlist.id,
@@ -259,14 +289,6 @@ class SpotifyImporter(
                     missing = missing.filterNotNull(),
                     syncing = syncTargetId != null,
                 )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _state.value = SpotifyImportState.Failed(
-                    e.message ?: "Import gagal. Cek koneksi internet lalu coba lagi."
-                )
-            }
-        }
     }
 
     /** Best YouTube Music match for one Spotify track, or null when nothing is close enough. */

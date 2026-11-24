@@ -61,6 +61,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onPlayerDesign: () -> Unit = {},
     onEqualizer: () -> Unit = {},
+    onSpotifyAccount: () -> Unit = {},
 ) {
     val app = LocalApp.current
     val ui = LocalUi.current
@@ -74,6 +75,7 @@ fun SettingsScreen(
     val canvasEnabled by app.library.canvasEnabled.collectAsState()
     val eqEnabled by app.library.eqEnabled.collectAsState()
     val eqPreset by app.library.eqPreset.collectAsState()
+    val spotifyUser by app.spotifyAuth.user.collectAsState()
     val artistVideoEnabled by app.library.artistVideoEnabled.collectAsState()
     val canvasStatus by app.canvas.status.collectAsState()
     var license by remember { mutableStateOf(false) }
@@ -103,6 +105,16 @@ fun SettingsScreen(
             }
 
             item(key = "playback") {
+                SettingsGroup("Akun") {
+                    SettingsChoiceRow(
+                        icon = MIcons.Link,
+                        tint = SysGreen,
+                        title = "Akun Spotify",
+                        value = spotifyUser?.name ?: "Belum masuk",
+                        onClick = onSpotifyAccount,
+                    )
+                }
+                Spacer(Modifier.height(22.dp))
                 SettingsGroup("Pemutaran") {
                     SettingsToggleRow(
                         icon = MIcons.Repeat,
