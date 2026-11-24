@@ -23,6 +23,7 @@ fun Track.toMediaItem(): MediaItem {
         .build()
     return MediaItem.Builder()
         .setMediaId(videoId)
+        .setCustomCacheKey(videoId)
         .setUri("$STREAM_SCHEME://track/$videoId")
         .setMediaMetadata(md)
         .build()

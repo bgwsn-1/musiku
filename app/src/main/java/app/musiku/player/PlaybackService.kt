@@ -2,24 +2,17 @@ package app.musiku.player
 
 import android.app.PendingIntent
 import android.content.Intent
-import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import app.musiku.MainActivity
 import app.musiku.MusikuApp
-import app.musiku.data.USER_AGENT
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import java.io.IOException
 
 /**
  * Owns the real ExoPlayer. Because it is a MediaSessionService the music keeps playing with
@@ -36,30 +29,8 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         val app = application as MusikuApp
 
-        val http = DefaultHttpDataSource.Factory()
-            // Same UA the extractor uses when it resolves the stream; googlevideo URLs are
-            // minted for that client, so keep both sides identical.
-            .setUserAgent(USER_AGENT)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
-
-        val resolving = ResolvingDataSource.Factory(DefaultDataSource.Factory(this, http)) { spec: DataSpec ->
-            if (spec.uri.scheme == STREAM_SCHEME) {
-                val id = spec.uri.lastPathSegment ?: throw IOException("bad track uri")
-                val url = try {
-                    app.streams.resolveBlocking(id)
-                } catch (e: Exception) {
-                    throw IOException("resolve failed: ${e.message}", e)
-                }
-                spec.withUri(Uri.parse(url))
-            } else {
-                spec
-            }
-        }
-
         val player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(resolving))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(app.downloads.playbackDataSourceFactory()))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)

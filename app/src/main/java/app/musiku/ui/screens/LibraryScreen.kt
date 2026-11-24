@@ -95,7 +95,7 @@ private fun SfStyle(
     letterSpacing = tracking,
 )
 
-private enum class LibraryPage { Home, Playlists, Artists, Albums, Songs, Liked }
+private enum class LibraryPage { Home, Playlists, Artists, Albums, Songs, Liked, Downloads }
 
 private data class ArtistGroup(val name: String, val artistId: String?, val thumbs: String?, val count: Int)
 private data class AlbumGroup(val name: String, val albumId: String?, val artist: String?, val thumbs: String?, val count: Int)
@@ -213,6 +213,7 @@ private fun LibraryHome(onOpen: (LibraryPage) -> Unit, onHistory: () -> Unit) {
                 LibraryCategory("Album", SfLibraryIcons.SquareStack) { onOpen(LibraryPage.Albums) }
                 LibraryCategory("Lagu", SfLibraryIcons.MusicNote) { onOpen(LibraryPage.Songs) }
                 LibraryCategory("Disukai", SfLibraryIcons.Heart) { onOpen(LibraryPage.Liked) }
+                LibraryCategory("Unduhan", MIcons.Download) { onOpen(LibraryPage.Downloads) }
                 LibraryCategory("Riwayat", SfLibraryIcons.Clock) { onHistory() }
                 LibraryCategory("Impor Spotify", SfLibraryIcons.Link) { ui.spotifyImportOpen = true }
             }
@@ -397,6 +398,8 @@ private fun LibraryCollection(page: LibraryPage, onBack: () -> Unit) {
     val app = LocalApp.current
     val ui = LocalUi.current
     val liked by app.library.liked.collectAsState()
+    val downloadedTracks by app.library.downloadedTracks.collectAsState()
+    val downloadStates by app.downloads.states.collectAsState()
     val playlists by app.library.playlists.collectAsState()
     var creating by remember { mutableStateOf(false) }
 
@@ -406,6 +409,7 @@ private fun LibraryCollection(page: LibraryPage, onBack: () -> Unit) {
         LibraryPage.Albums -> "Album"
         LibraryPage.Songs -> "Lagu"
         LibraryPage.Liked -> "Disukai"
+        LibraryPage.Downloads -> "Unduhan"
         else -> "Pustaka"
     }
     val artists = remember(liked) {
@@ -522,6 +526,37 @@ private fun LibraryCollection(page: LibraryPage, onBack: () -> Unit) {
                             icon = SfLibraryIcons.Heart,
                             title = "Belum ada lagu",
                             body = "Tekan ikon hati di lagu mana pun, nanti muncul di sini.",
+                            action = "Cari lagu",
+                            onAction = { ui.navigate(Routes.Search) },
+                        )
+                    }
+                }
+            }
+            LibraryPage.Downloads -> {
+                val offline = downloadedTracks.filter { t ->
+                    val s = downloadStates[t.videoId]
+                    s != null && (s.isCompleted || s.isActive)
+                }
+                if (offline.isNotEmpty()) {
+                    item(key = "dl-actions") {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        ) {
+                            PlayButton(MIcons.Play, "Putar", Modifier.weight(1f)) { app.player.playTracks(offline, 0) }
+                            PlayButton(MIcons.Shuffle, "Acak", Modifier.weight(1f)) { app.player.playTracks(offline.shuffled(), 0) }
+                        }
+                    }
+                }
+                listItemsIndexed(offline, key = { i, t -> "dl-${t.videoId}-$i" }) { i, t ->
+                    LibrarySongRow(t, offline, i)
+                }
+                if (offline.isEmpty()) {
+                    item(key = "no-downloads") {
+                        LibraryEmptyState(
+                            icon = MIcons.Download,
+                            title = "Belum ada unduhan",
+                            body = "Buka menu ⋯ di lagu atau playlist lalu pilih “Unduh untuk offline”.",
                             action = "Cari lagu",
                             onAction = { ui.navigate(Routes.Search) },
                         )

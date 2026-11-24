@@ -86,6 +86,8 @@ fun TrackMenu(
     val scope = rememberCoroutineScope()
     val state by app.player.ui.collectAsState()
     val liked by app.library.liked.collectAsState()
+    val downloadStates by app.downloads.states.collectAsState()
+    val dl = downloadStates[track.videoId]
     val isLiked = liked.any { it.videoId == track.videoId }
     val isCurrent = state.current?.videoId == track.videoId
     val dark = Tok.IsDark
@@ -193,6 +195,37 @@ fun TrackMenu(
                 onClick = act { app.player.toggleLike(track) },
             )
             MenuRow(MMenuIcons.Plus, "Tambah ke playlist…", dark = dark, onClick = act { ui.addToPlaylist = track })
+            when {
+                dl?.isCompleted == true -> MenuRow(
+                    MIcons.Trash,
+                    "Hapus unduhan",
+                    dark = dark,
+                    danger = true,
+                    onClick = act {
+                        app.downloads.remove(track.videoId)
+                        app.player.say("Unduhan dihapus")
+                    },
+                )
+                dl?.isActive == true -> MenuRow(
+                    MIcons.Download,
+                    "Mengunduh… ${dl.progress.toInt()}%",
+                    subtitle = "Ketuk untuk batalkan",
+                    dark = dark,
+                    onClick = act {
+                        app.downloads.remove(track.videoId)
+                        app.player.say("Unduhan dibatalkan")
+                    },
+                )
+                else -> MenuRow(
+                    MIcons.Download,
+                    "Unduh untuk offline",
+                    dark = dark,
+                    onClick = act {
+                        app.downloads.download(track)
+                        app.player.say("Mengunduh ${track.title}")
+                    },
+                )
+            }
             Sep(dark)
             if (track.albumId != null) {
                 MenuRow(MMenuIcons.Album, "Buka album", subtitle = track.album, dark = dark, onClick = act { ui.navigate(Routes.album(track.albumId)) })

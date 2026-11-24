@@ -528,6 +528,12 @@ fun PlaylistScreen(id: String, onBack: () -> Unit) {
                         app.importer.sync(pl)
                         ui.spotifyImportOpen = true
                     })
+                    if (tracks.isNotEmpty()) {
+                        add("Unduh semua lagu" to {
+                            app.downloads.downloadAll(tracks)
+                            app.player.say("Mengunduh ${tracks.size} lagu")
+                        })
+                    }
                     add("Ganti nama" to { renaming = true })
                     add("Hapus playlist" to { confirmDelete = true })
                 }

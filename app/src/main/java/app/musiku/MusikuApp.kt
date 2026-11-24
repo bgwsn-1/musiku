@@ -7,6 +7,7 @@ import app.musiku.data.ArtistArtworkVideo
 import app.musiku.data.Canvas
 import app.musiku.data.Library
 import app.musiku.data.LyricsRepo
+import app.musiku.data.OfflineDownloads
 import app.musiku.data.Spotify
 import app.musiku.data.SpotifyImporter
 import app.musiku.data.StreamResolver
@@ -34,6 +35,7 @@ class MusikuApp : Application() {
     val lyrics: LyricsRepo by lazy { LyricsRepo(http, yt) }
     val streams: StreamResolver by lazy { StreamResolver(http) }
     val library: Library by lazy { Library(this, scope) }
+    val downloads: OfflineDownloads by lazy { OfflineDownloads(this, scope, streams, library) }
     val player: PlayerController by lazy { PlayerController(this, scope, library, yt) }
     val spotify: Spotify by lazy { Spotify(http) }
     val canvas: Canvas by lazy { Canvas(this, http) }

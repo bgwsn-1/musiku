@@ -51,6 +51,8 @@ fun TrackRow(
     val app = LocalApp.current
     val ui = LocalUi.current
     val state by app.player.ui.collectAsState()
+    val downloadStates by app.downloads.states.collectAsState()
+    val dl = downloadStates[track.videoId]
     val isCurrent = state.current?.videoId == track.videoId
     val playing = isCurrent && state.playing
     // Where the row sits, so the menu can grow out of it (and shrink back into it).
@@ -101,6 +103,14 @@ fun TrackRow(
                     if (sub.isNotEmpty()) {
                         Text(sub, color = Tok.Label2, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                }
+                if (dl != null && (dl.isCompleted || dl.isActive)) {
+                    Icon(
+                        MIcons.Download,
+                        contentDescription = if (dl.isCompleted) "Tersedia offline" else "Mengunduh",
+                        tint = if (dl.isCompleted) Tok.Accent else Tok.Label3,
+                        modifier = Modifier.size(14.dp),
+                    )
                 }
                 if (!track.duration.isNullOrBlank()) {
                     Text(track.duration, color = Tok.Label3, fontSize = 13.sp)
