@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -162,6 +163,14 @@ private fun LibraryHome(onOpen: (LibraryPage) -> Unit, onHistory: () -> Unit) {
     val ui = LocalUi.current
     val liked by app.library.liked.collectAsState()
     val playlists by app.library.playlists.collectAsState()
+    val spotifyUser by app.spotifyAuth.user.collectAsState()
+    val spotifyPlaylists by app.spotifyAuth.playlists.collectAsState()
+
+    LaunchedEffect(spotifyUser?.id) {
+        if (spotifyUser != null && spotifyPlaylists.isEmpty()) {
+            runCatching { app.spotifyAuth.myPlaylists() }
+        }
+    }
 
     val pinned = remember(playlists) { playlists.sortedByDescending { it.createdAt }.take(6) }
     val artists = remember(liked) {
@@ -246,7 +255,57 @@ private fun LibraryHome(onOpen: (LibraryPage) -> Unit, onHistory: () -> Unit) {
                     if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
-        } else {
+        }
+
+        if (spotifyUser != null && spotifyPlaylists.isNotEmpty()) {
+            item(key = "spotify-title") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Dari Spotify",
+                        style = SfStyle(22.sp, 28.sp, FontWeight.Bold, (-0.26).sp),
+                        color = Tok.Label1,
+                    )
+                    Text(
+                        "Lihat Semua",
+                        style = SfStyle(14.sp, 18.sp, FontWeight.SemiBold),
+                        color = Tok.Accent,
+                        modifier = Modifier.clip(CircleShape).pressable { ui.navigate(Routes.SpotifyLibrary) }.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+            listItems(spotifyPlaylists.take(6).chunked(2), key = { "sp-" + it.first().id }) { pair ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 18.dp),
+                ) {
+                    pair.forEach { sp ->
+                        Box(Modifier.weight(1f)) {
+                            RecentTile(
+                                RecentItem(
+                                    key = "sp-${sp.id}",
+                                    title = sp.name,
+                                    subtitle = songCount(sp.trackCount),
+                                    thumbs = sp.cover,
+                                ),
+                            ) {
+                                val existing = playlists.firstOrNull { it.source == "spotify" && it.sourceId == sp.id }
+                                if (existing != null) {
+                                    ui.navigate(Routes.playlist(existing.id))
+                                } else {
+                                    ui.spotifyImportOpen = true
+                                    app.importer.import("https://open.spotify.com/playlist/${sp.id}")
+                                }
+                            }
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        } else if (recent.isEmpty()) {
             item(key = "library-empty") {
                 LibraryEmptyState(
                     icon = SfLibraryIcons.MusicNoteList,
@@ -403,6 +462,7 @@ private fun LibraryCollection(page: LibraryPage, onBack: () -> Unit) {
     val downloadedTracks by app.library.downloadedTracks.collectAsState()
     val downloadStates by app.downloads.states.collectAsState()
     val playlists by app.library.playlists.collectAsState()
+    val spotifyPlaylists by app.spotifyAuth.playlists.collectAsState()
     var creating by remember { mutableStateOf(false) }
 
     val title = when (page) {
@@ -462,7 +522,32 @@ private fun LibraryCollection(page: LibraryPage, onBack: () -> Unit) {
                         onClick = { ui.navigate(Routes.playlist(pl.id)) },
                     )
                 }
-                if (playlists.isEmpty()) {
+                val importedIds = playlists.mapNotNull { it.sourceId }.toSet()
+                val remoteOnly = spotifyPlaylists.filter { it.id !in importedIds }
+                if (remoteOnly.isNotEmpty()) {
+                    item(key = "sp-pl-header") {
+                        Text(
+                            "Dari Spotify",
+                            style = SfStyle(18.sp, 22.sp, FontWeight.Bold),
+                            color = Tok.Label1,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
+                        )
+                    }
+                    listItems(remoteOnly, key = { "sp-pl-${it.id}" }) { sp ->
+                        LibraryArtRow(
+                            art = sp.cover,
+                            title = sp.name,
+                            subtitle = songCount(sp.trackCount),
+                            artSize = 60.dp,
+                            rowHeight = 76.dp,
+                            onClick = {
+                                ui.spotifyImportOpen = true
+                                app.importer.import("https://open.spotify.com/playlist/${sp.id}")
+                            },
+                        )
+                    }
+                }
+                if (playlists.isEmpty() && remoteOnly.isEmpty()) {
                     item(key = "no-playlists") {
                         LibraryEmptyState(
                             icon = SfLibraryIcons.MusicNoteList,

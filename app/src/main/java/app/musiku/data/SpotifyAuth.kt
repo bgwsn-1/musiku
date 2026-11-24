@@ -71,6 +71,9 @@ class SpotifyAuth(
     private val _user = MutableStateFlow<SpotifyUser?>(null)
     val user: StateFlow<SpotifyUser?> = _user
 
+    private val _playlists = MutableStateFlow<List<SpotifyUserPlaylist>>(emptyList())
+    val playlists: StateFlow<List<SpotifyUserPlaylist>> = _playlists
+
     private val refreshMutex = Mutex()
     private val hashMutex = Mutex()
     private val hashes = ConcurrentHashMap<String, String>().apply {
@@ -104,6 +107,7 @@ class SpotifyAuth(
             val name = p[kUserName]
             if (!spDc.isNullOrBlank() && !id.isNullOrBlank() && !name.isNullOrBlank()) {
                 _user.value = SpotifyUser(id, name, p[kUserAvatar]?.takeIf { it.isNotBlank() })
+                runCatching { myPlaylists() }
             }
         }
     }
@@ -133,6 +137,7 @@ class SpotifyAuth(
                     if (me.avatarUrl != null) it[kUserAvatar] = me.avatarUrl else it.remove(kUserAvatar)
                 }
                 _user.value = me
+                scope.launch { runCatching { myPlaylists() } }
                 me
             } catch (e: Exception) {
                 spDc = prevDc
@@ -147,6 +152,7 @@ class SpotifyAuth(
         accessToken = null
         tokenExpiresAtMs = 0L
         _user.value = null
+        _playlists.value = emptyList()
         scope.launch {
             runCatching { ctx.spotifyAuthStore.edit { it.clear() } }
             runCatching {
@@ -162,7 +168,7 @@ class SpotifyAuth(
         val out = ArrayList<SpotifyUserPlaylist>()
         var offset = 0
         val limit = 50
-        repeat(4) {
+        for (page in 0 until 4) {
             val vars = JSONObject()
                 .put("filters", JSONArray().put("Playlists"))
                 .put("order", JSONObject.NULL)
@@ -197,9 +203,10 @@ class SpotifyAuth(
                     ?: 0
                 out += SpotifyUserPlaylist(id, name, owner, cover, count, isPublic = true)
             }
-            if (items.length() < limit) return@withContext out
+            if (items.length() < limit) break
             offset += limit
         }
+        _playlists.value = out
         out
     }
 
