@@ -58,7 +58,8 @@ private class NpDownloader(private val client: OkHttpClient) : Downloader() {
  * (`ANDROID_VR`, `IOS`, `ANDROID_MUSIC`) when NewPipe hits bot-checks or signature changes.
  */
 class StreamResolver(private val client: OkHttpClient) {
-    private data class Hit(val url: String, val exp: Long)
+    data class ResolvedStream(val url: String, val userAgent: String)
+    private data class Hit(val stream: ResolvedStream, val exp: Long)
 
     private val cache = LruCache<String, Hit>(256)
 
@@ -71,31 +72,33 @@ class StreamResolver(private val client: OkHttpClient) {
     }
 
     /** Blocking on purpose: called from ExoPlayer's loader thread via ResolvingDataSource. */
-    fun resolveBlocking(videoId: String): String {
+    fun resolveStreamBlocking(videoId: String): ResolvedStream {
         cache.get(videoId)?.let {
-            if (it.exp > System.currentTimeMillis()) return it.url
+            if (it.exp > System.currentTimeMillis()) return it.stream
             cache.remove(videoId)
         }
 
-        val url = runCatching { resolveWithNewPipe(videoId) }
+        val resolved = runCatching { resolveWithNewPipe(videoId) }
             .onFailure { Log.w(TAG, "NewPipe failed for $videoId: ${it.message}") }
             .getOrNull()
             ?: resolveWithInnerTubeFallbacks(videoId)
             ?: error("no audio stream for $videoId")
 
-        val expMs = parseExpiryMs(url) ?: (System.currentTimeMillis() + DEFAULT_TTL_MS)
-        cache.put(videoId, Hit(url, expMs))
-        return url
+        val expMs = parseExpiryMs(resolved.url) ?: (System.currentTimeMillis() + DEFAULT_TTL_MS)
+        cache.put(videoId, Hit(resolved, expMs))
+        return resolved
     }
 
-    private fun resolveWithNewPipe(videoId: String): String {
+    fun resolveBlocking(videoId: String): String = resolveStreamBlocking(videoId).url
+
+    private fun resolveWithNewPipe(videoId: String): ResolvedStream {
         val info = StreamInfo.getInfo("https://www.youtube.com/watch?v=$videoId")
         val streams = info.audioStreams.filter { it.isUrl && !it.content.isNullOrBlank() }
         val pick = streams.filter { it.format?.suffix == "m4a" }.maxByOrNull { it.averageBitrate }
             ?: streams.maxByOrNull { it.averageBitrate }
             ?: error("no audio stream for $videoId")
         Log.d(TAG, "resolved $videoId via NewPipe -> ${pick.format?.suffix} ${pick.averageBitrate}kbps")
-        return requireNotNull(pick.content)
+        return ResolvedStream(requireNotNull(pick.content), USER_AGENT)
     }
 
     private data class ClientProfile(
@@ -145,14 +148,14 @@ class StreamResolver(private val client: OkHttpClient) {
         ),
     )
 
-    private fun resolveWithInnerTubeFallbacks(videoId: String): String? {
+    private fun resolveWithInnerTubeFallbacks(videoId: String): ResolvedStream? {
         for (c in fallbackClients) {
             val url = runCatching { fetchInnerTubeAudioUrl(videoId, c) }
                 .onFailure { Log.w(TAG, "Fallback ${c.name} failed for $videoId: ${it.message}") }
                 .getOrNull()
             if (url != null) {
                 Log.d(TAG, "resolved $videoId via fallback ${c.name}")
-                return url
+                return ResolvedStream(url, c.ua)
             }
         }
         return null

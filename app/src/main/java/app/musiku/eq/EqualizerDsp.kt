@@ -273,7 +273,7 @@ class CustomEqualizerAudioProcessor : AudioProcessor {
     private fun supports(format: AudioProcessor.AudioFormat): Boolean =
         format.encoding == C.ENCODING_PCM_16BIT && format.sampleRate > 0 && format.channelCount in 1..2
 
-    override fun isActive(): Boolean = supports(pendingFormat)
+    override fun isActive(): Boolean = equalizerEnabled && supports(pendingFormat)
 
     @Synchronized
     override fun queueInput(inputBuffer: ByteBuffer) {

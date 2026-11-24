@@ -85,12 +85,15 @@ class OfflineDownloads(
         ResolvingDataSource.Factory(DefaultDataSource.Factory(ctx, httpFactory)) { spec: DataSpec ->
             if (spec.uri.scheme == STREAM_SCHEME) {
                 val id = spec.uri.lastPathSegment ?: throw IOException("bad track uri")
-                val url = try {
-                    streams.resolveBlocking(id)
+                val resolved = try {
+                    streams.resolveStreamBlocking(id)
                 } catch (e: Exception) {
                     throw IOException("resolve failed: ${e.message}", e)
                 }
-                spec.withUri(Uri.parse(url))
+                spec.buildUpon()
+                    .setUri(Uri.parse(resolved.url))
+                    .setHttpRequestHeaders(spec.httpRequestHeaders + ("User-Agent" to resolved.userAgent))
+                    .build()
             } else {
                 spec
             }
