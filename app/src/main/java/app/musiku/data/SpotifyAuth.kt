@@ -25,10 +25,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 private val Context.spotifyAuthStore by preferencesDataStore(name = "spotify_auth")
 
@@ -49,7 +53,8 @@ data class SpotifyUserPlaylist(
 
 /**
  * Authenticated Spotify Web Player session backed by `sp_dc` cookie + WebView `/api/token`
- * capture (same mechanism as Convx, without external TOTP secret dictionaries).
+ * capture, querying Spotify's Pathfinder GraphQL endpoint (`api-partner.spotify.com`) just like
+ * Convx so it never hits `api.spotify.com/v1` Web Player 429 rate limits.
  */
 class SpotifyAuth(
     private val ctx: Context,
@@ -67,6 +72,16 @@ class SpotifyAuth(
     val user: StateFlow<SpotifyUser?> = _user
 
     private val refreshMutex = Mutex()
+    private val hashMutex = Mutex()
+    private val hashes = ConcurrentHashMap<String, String>().apply {
+        put("profileAttributes", "08ffb4730af3746e04a8301396f20875dbbce10c75243803091a9274eacc8ac0")
+        put("libraryV3", "390c78e5b951029bad359785e69b07b536a509c581cbcd0aded5e5067f187455")
+        put("fetchPlaylist", "21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d73910190c6acaf")
+        put("fetchLibraryTracks", "087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240")
+    }
+
+    @Volatile
+    private var hashesRefreshedAt = 0L
 
     @Volatile
     private var spDc: String? = null
@@ -107,7 +122,8 @@ class SpotifyAuth(
             try {
                 val token = accessToken(force = accessToken == null)
                     ?: throw IOException("Gagal mendapatkan token Spotify")
-                val me = fetchMe(token)
+                val me = runCatching { fetchMePathfinder() }
+                    .getOrElse { SpotifyUser("spotify", "Pengguna Spotify", null) }
                 ctx.spotifyAuthStore.edit {
                     it[kSpDc] = clean
                     it[kAccessToken] = token
@@ -144,44 +160,79 @@ class SpotifyAuth(
 
     suspend fun myPlaylists(): List<SpotifyUserPlaylist> = withContext(Dispatchers.IO) {
         val out = ArrayList<SpotifyUserPlaylist>()
-        var nextUrl: String? = "https://api.spotify.com/v1/me/playlists?limit=50"
-        var pages = 0
-        while (nextUrl != null && pages < 4) {
-            val json = apiGet(nextUrl)
-            val items = json.optJSONArray("items") ?: break
+        var offset = 0
+        val limit = 50
+        repeat(4) {
+            val vars = JSONObject()
+                .put("filters", JSONArray().put("Playlists"))
+                .put("order", JSONObject.NULL)
+                .put("textFilter", "")
+                .put("features", JSONArray().put("LIKED_SONGS").put("YOUR_EPISODES_V2").put("PRERELEASES").put("EVENTS"))
+                .put("limit", limit)
+                .put("offset", offset)
+                .put("flatten", true)
+                .put("expandedFolders", JSONArray())
+                .put("folderUri", JSONObject.NULL)
+                .put("includeFoldersWhenFlattening", false)
+
+            val res = graphqlPost("libraryV3", vars)
+            val lib = res.optJSONObject("data")?.optJSONObject("me")?.optJSONObject("libraryV3")
+                ?: return@withContext out
+            val items = lib.optJSONArray("items") ?: return@withContext out
+            if (items.length() == 0) return@withContext out
+
             for (i in 0 until items.length()) {
-                val p = items.optJSONObject(i) ?: continue
-                val id = p.optString("id").takeIf { it.isNotBlank() } ?: continue
-                val name = p.optString("name").takeIf { it.isNotBlank() } ?: "Playlist"
-                val owner = p.optJSONObject("owner")?.optString("display_name")?.takeIf { it.isNotBlank() }
-                val images = p.optJSONArray("images")
-                val cover = images?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
-                val count = p.optJSONObject("tracks")?.optInt("total", 0) ?: 0
-                val isPublic = p.optBoolean("public", true)
-                out += SpotifyUserPlaylist(id, name, owner, cover, count, isPublic)
+                val wrapper = items.optJSONObject(i)?.optJSONObject("item") ?: continue
+                if (wrapper.optString("__typename") != "PlaylistResponseWrapper") continue
+                val data = wrapper.optJSONObject("data") ?: continue
+                val uri = wrapper.optString("_uri").ifBlank { data.optString("uri") }
+                val id = uri.substringAfterLast(':').takeIf { it.isNotBlank() } ?: continue
+                val name = data.optString("name").takeIf { it.isNotBlank() } ?: "Playlist"
+                val owner = data.optJSONObject("ownerV2")?.optJSONObject("data")?.optString("name")?.takeIf { it.isNotBlank() }
+                val cover = data.optJSONObject("images")?.optJSONArray("items")
+                    ?.optJSONObject(0)?.optJSONArray("sources")
+                    ?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
+                val count = data.optJSONObject("content")?.optInt("totalCount", -1)?.takeIf { it >= 0 }
+                    ?: data.optJSONObject("tracks")?.optInt("totalCount", 0)
+                    ?: 0
+                out += SpotifyUserPlaylist(id, name, owner, cover, count, isPublic = true)
             }
-            nextUrl = json.optString("next").takeIf { it.startsWith("https://") }
-            pages++
+            if (items.length() < limit) return@withContext out
+            offset += limit
         }
         out
     }
 
     suspend fun playlistTracks(playlistId: String): SpotifyPlaylist = withContext(Dispatchers.IO) {
-        val meta = apiGet("https://api.spotify.com/v1/playlists/$playlistId?fields=id,name,images")
-        val name = meta.optString("name").takeIf { it.isNotBlank() } ?: "Playlist Spotify"
-        val cover = meta.optJSONArray("images")?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
+        var name = "Playlist Spotify"
+        var cover: String? = null
         val tracks = ArrayList<SpotifyTrack>()
-        var nextUrl: String? = "https://api.spotify.com/v1/playlists/$playlistId/tracks?limit=100"
-        var pages = 0
-        while (nextUrl != null && pages < 5) {
-            val json = apiGet(nextUrl)
-            val items = json.optJSONArray("items") ?: break
-            for (i in 0 until items.length()) {
-                val t = items.optJSONObject(i)?.optJSONObject("track") ?: continue
-                parseApiTrack(t)?.let(tracks::add)
+        var offset = 0
+        val limit = 100
+        for (page in 0 until 5) {
+            val vars = JSONObject()
+                .put("uri", "spotify:playlist:$playlistId")
+                .put("offset", offset)
+                .put("limit", limit)
+                .put("enableWatchFeedEntrypoint", false)
+            val res = graphqlPost("fetchPlaylist", vars)
+            val pl = res.optJSONObject("data")?.optJSONObject("playlistV2") ?: break
+            if (page == 0) {
+                pl.optString("name").takeIf { it.isNotBlank() }?.let { name = it }
+                cover = pl.optJSONObject("images")?.optJSONArray("items")
+                    ?.optJSONObject(0)?.optJSONArray("sources")
+                    ?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
             }
-            nextUrl = json.optString("next").takeIf { it.startsWith("https://") }
-            pages++
+            val items = pl.optJSONObject("content")?.optJSONArray("items") ?: break
+            if (items.length() == 0) break
+            for (i in 0 until items.length()) {
+                val wrapper = items.optJSONObject(i)?.optJSONObject("itemV2") ?: continue
+                val data = wrapper.optJSONObject("data") ?: continue
+                val uriOverride = wrapper.optString("_uri").ifBlank { wrapper.optString("uri") }.takeIf { it.isNotBlank() }
+                parseGqlTrack(data, uriOverride)?.let(tracks::add)
+            }
+            if (items.length() < limit) break
+            offset += limit
         }
         if (tracks.isEmpty()) throw IOException("Playlist kosong atau tidak bisa dibaca.")
         SpotifyPlaylist(playlistId, name, cover, tracks)
@@ -189,69 +240,129 @@ class SpotifyAuth(
 
     suspend fun likedTracks(): SpotifyPlaylist = withContext(Dispatchers.IO) {
         val tracks = ArrayList<SpotifyTrack>()
-        var nextUrl: String? = "https://api.spotify.com/v1/me/tracks?limit=50"
-        var pages = 0
-        while (nextUrl != null && pages < 6) {
-            val json = apiGet(nextUrl)
-            val items = json.optJSONArray("items") ?: break
+        var offset = 0
+        val limit = 50
+        for (page in 0 until 6) {
+            val vars = JSONObject().put("offset", offset).put("limit", limit)
+            val res = graphqlPost("fetchLibraryTracks", vars)
+            val items = res.optJSONObject("data")?.optJSONObject("me")?.optJSONObject("library")
+                ?.optJSONObject("tracks")?.optJSONArray("items") ?: break
+            if (items.length() == 0) break
             for (i in 0 until items.length()) {
-                val t = items.optJSONObject(i)?.optJSONObject("track") ?: continue
-                parseApiTrack(t)?.let(tracks::add)
+                val wrapper = items.optJSONObject(i)?.optJSONObject("track") ?: continue
+                val data = wrapper.optJSONObject("data") ?: continue
+                val uriOverride = wrapper.optString("_uri").ifBlank { wrapper.optString("uri") }.takeIf { it.isNotBlank() }
+                parseGqlTrack(data, uriOverride)?.let(tracks::add)
             }
-            nextUrl = json.optString("next").takeIf { it.startsWith("https://") }
-            pages++
+            if (items.length() < limit) break
+            offset += limit
         }
         if (tracks.isEmpty()) throw IOException("Belum ada lagu yang disukai di Spotify.")
         SpotifyPlaylist("liked", "Liked Songs (Spotify)", null, tracks)
     }
 
-    private fun parseApiTrack(t: JSONObject): SpotifyTrack? {
-        val uri = t.optString("uri").takeIf { it.startsWith("spotify:track:") } ?: return null
-        val title = t.optString("name").takeIf { it.isNotBlank() } ?: return null
-        val artistsArr = t.optJSONArray("artists")
+    private fun parseGqlTrack(data: JSONObject, uriOverride: String?): SpotifyTrack? {
+        val uri = uriOverride ?: data.optString("uri").takeIf { it.isNotBlank() }
+            ?: data.optString("_uri").takeIf { it.isNotBlank() } ?: return null
+        if (!uri.startsWith("spotify:track:")) return null
+        val title = data.optString("name").takeIf { it.isNotBlank() } ?: return null
+        val artistsArr = data.optJSONObject("artists")?.optJSONArray("items")
         val artist = if (artistsArr == null) null else (0 until artistsArr.length())
-            .mapNotNull { artistsArr.optJSONObject(it)?.optString("name")?.takeIf { n -> n.isNotBlank() } }
+            .mapNotNull { artistsArr.optJSONObject(it)?.optJSONObject("profile")?.optString("name")?.takeIf { n -> n.isNotBlank() } }
             .joinToString(", ")
             .takeIf { it.isNotBlank() }
-        val durationMs = t.optLong("duration_ms", 0L)
+        val durationMs = data.optJSONObject("duration")?.optLong("totalMilliseconds", 0L)
+            ?.takeIf { it > 0L }
+            ?: data.optLong("durationMs", 0L)
         return SpotifyTrack(uri, title, artist, durationMs)
     }
 
-    private fun fetchMe(token: String): SpotifyUser {
-        val req = Request.Builder()
-            .url("https://api.spotify.com/v1/me")
-            .header("Authorization", "Bearer $token")
-            .header("User-Agent", DESKTOP_UA)
-            .build()
-        val json = http.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) throw IOException("Spotify /me HTTP ${r.code}")
-            JSONObject(r.body?.string().orEmpty())
-        }
-        val id = json.optString("id").takeIf { it.isNotBlank() } ?: "spotify"
-        val name = json.optString("display_name").takeIf { it.isNotBlank() } ?: id
-        val avatar = json.optJSONArray("images")?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
+    private suspend fun fetchMePathfinder(): SpotifyUser {
+        val res = graphqlPost("profileAttributes", JSONObject())
+        val profile = res.optJSONObject("data")?.optJSONObject("me")?.optJSONObject("profile")
+            ?: throw IOException("Profil Spotify tidak tersedia")
+        val uri = profile.optString("uri")
+        val id = uri.substringAfterLast(':').takeIf { it.isNotBlank() } ?: "spotify"
+        val name = profile.optString("name").takeIf { it.isNotBlank() } ?: id
+        val avatar = profile.optJSONObject("avatar")?.optJSONArray("sources")
+            ?.optJSONObject(0)?.optString("url")?.takeIf { it.isNotBlank() }
         return SpotifyUser(id, name, avatar)
     }
 
-    private suspend fun apiGet(url: String): JSONObject {
-        val firstToken = accessToken(force = false) ?: accessToken(force = true)
+    private suspend fun graphqlPost(operation: String, variables: JSONObject): JSONObject {
+        val token = accessToken(force = false) ?: accessToken(force = true)
             ?: throw IOException("Belum login Spotify")
-        return runCatching { callApi(url, firstToken) }.getOrElse { err ->
-            val fresh = accessToken(force = true) ?: throw err
-            callApi(url, fresh)
+        val hash = hashes[operation] ?: throw IOException("Hash $operation tidak ditemukan")
+        val first = runCatching { executeGql(operation, hash, variables, token) }
+        val res = first.getOrElse { err ->
+            if (err.message?.contains("401") == true) {
+                val fresh = accessToken(force = true) ?: throw err
+                executeGql(operation, hash, variables, fresh)
+            } else {
+                throw err
+            }
         }
+        val errors = res.optJSONArray("errors")
+        val msg = errors?.optJSONObject(0)?.optString("message").orEmpty()
+        if (msg.contains("PersistedQueryNotFound", ignoreCase = true)) {
+            refreshHashesFromWebPlayer()
+            val newHash = hashes[operation] ?: hash
+            return executeGql(operation, newHash, variables, accessToken(force = false) ?: token)
+        }
+        if (errors != null && errors.length() > 0 && res.optJSONObject("data") == null) {
+            throw IOException(msg.ifBlank { "Spotify GraphQL error" })
+        }
+        return res
     }
 
-    private fun callApi(url: String, token: String): JSONObject {
+    private fun executeGql(operation: String, sha256: String, variables: JSONObject, token: String): JSONObject {
+        val body = JSONObject()
+            .put("variables", variables)
+            .put("operationName", operation)
+            .put(
+                "extensions",
+                JSONObject().put(
+                    "persistedQuery",
+                    JSONObject().put("version", 1).put("sha256Hash", sha256),
+                ),
+            )
         val req = Request.Builder()
-            .url(url)
+            .url(GQL_URL)
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
             .header("Authorization", "Bearer $token")
             .header("Accept", "application/json")
+            .header("app-platform", "WebPlayer")
+            .header("Origin", ORIGIN)
+            .header("Referer", "$ORIGIN/")
             .header("User-Agent", DESKTOP_UA)
             .build()
         http.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) throw IOException("Spotify API HTTP ${r.code}")
+            if (!r.isSuccessful) throw IOException("Spotify Pathfinder HTTP ${r.code}")
             return JSONObject(r.body?.string().orEmpty())
+        }
+    }
+
+    private suspend fun refreshHashesFromWebPlayer() = hashMutex.withLock {
+        if (System.currentTimeMillis() - hashesRefreshedAt < 60_000L) return@withLock
+        runCatching {
+            val page = httpGet("$ORIGIN/")
+            val bundleUrl = Regex("""https://open\.spotifycdn\.com/cdn/build/web-player/web-player\.[a-f0-9]+\.js""")
+                .find(page)?.value ?: return@runCatching
+            val script = httpGet(bundleUrl)
+            for (op in hashes.keys.toList()) {
+                val found = Regex("""["']${Regex.escape(op)}["']\s*,\s*["']query["']\s*,\s*["']([a-f0-9]{64})["']""")
+                    .find(script)?.groupValues?.get(1)
+                if (found != null) hashes[op] = found
+            }
+            hashesRefreshedAt = System.currentTimeMillis()
+        }
+    }
+
+    private fun httpGet(url: String): String {
+        val req = Request.Builder().url(url).header("User-Agent", DESKTOP_UA).build()
+        http.newCall(req).execute().use { r ->
+            if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
+            return r.body?.string().orEmpty()
         }
     }
 
@@ -334,6 +445,7 @@ class SpotifyAuth(
 
     companion object {
         private const val ORIGIN = "https://open.spotify.com"
+        private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
         const val BRIDGE = "MusikuSpotifyToken"
         const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
