@@ -1,12 +1,16 @@
 package app.musiku.ui.screens
 
 import android.annotation.SuppressLint
+import android.graphics.Bitmap
+import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import app.musiku.data.SpotifyAuth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -70,6 +74,7 @@ fun SpotifyLoginScreen(
     val scope = rememberCoroutineScope()
     var verifying by remember { mutableStateOf(false) }
     var loadProgress by remember { mutableStateOf(0) }
+    var capturedToken by remember { mutableStateOf<Pair<String, Long>?>(null) }
 
     fun extractSpDc(cookieStr: String?): String? {
         if (cookieStr.isNullOrBlank()) return null
@@ -80,7 +85,7 @@ fun SpotifyLoginScreen(
             ?.takeIf { it.isNotBlank() }
     }
 
-    fun tryCompleteLogin(url: String?, cm: CookieManager) {
+    fun tryCompleteLogin(url: String?, cm: CookieManager, tokenPair: Pair<String, Long>? = capturedToken) {
         if (verifying) return
         val u = url ?: return
         if (!u.contains("open.spotify.com")) return
@@ -90,7 +95,7 @@ fun SpotifyLoginScreen(
             ?: return
         verifying = true
         scope.launch {
-            runCatching { app.spotifyAuth.setCookie(dc) }
+            runCatching { app.spotifyAuth.setSession(dc, tokenPair?.first, tokenPair?.second ?: 0L) }
                 .onSuccess { user ->
                     app.player.say("Masuk sebagai ${user.name}")
                     onLoggedIn()
@@ -140,10 +145,21 @@ fun SpotifyLoginScreen(
                         settings.databaseEnabled = true
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
-                        // Strip "; wv)" so Spotify's login SPA treats it as a normal mobile browser.
+                        // Strip "; wv)" so Spotify's login SPA treats it as a normal browser.
                         settings.userAgentString = settings.userAgentString
                             .replace("; wv)", ")")
                             .replace("Version/4.0 ", "")
+                        addJavascriptInterface(
+                            object {
+                                @JavascriptInterface
+                                fun postMessage(payload: String) {
+                                    val parsed = SpotifyAuth.parseTokenPayload(payload) ?: return
+                                    capturedToken = parsed
+                                    post { tryCompleteLogin(url, cm, parsed) }
+                                }
+                            },
+                            SpotifyAuth.BRIDGE,
+                        )
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 loadProgress = newProgress
@@ -155,6 +171,13 @@ fun SpotifyLoginScreen(
                                 return scheme != "http" && scheme != "https"
                             }
 
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                super.onPageStarted(view, url, favicon)
+                                if (Uri.parse(url.orEmpty()).host == "open.spotify.com") {
+                                    view?.evaluateJavascript(SpotifyAuth.TOKEN_HOOK, null)
+                                }
+                            }
+
                             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                                 super.doUpdateVisitedHistory(view, url, isReload)
                                 tryCompleteLogin(url, cm)
@@ -162,6 +185,9 @@ fun SpotifyLoginScreen(
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
+                                if (Uri.parse(url.orEmpty()).host == "open.spotify.com") {
+                                    view?.evaluateJavascript(SpotifyAuth.TOKEN_HOOK, null)
+                                }
                                 tryCompleteLogin(url, cm)
                             }
                         }

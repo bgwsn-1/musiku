@@ -1,24 +1,34 @@
 package app.musiku.data
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebStorage
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 private val Context.spotifyAuthStore by preferencesDataStore(name = "spotify_auth")
 
@@ -38,9 +48,8 @@ data class SpotifyUserPlaylist(
 )
 
 /**
- * Authenticated Spotify Web Player session backed by the `sp_dc` cookie obtained from WebView
- * login. Unlocks private playlists, >100-track playlists, and Liked Songs without needing a
- * Spotify Developer Client ID or Premium playback.
+ * Authenticated Spotify Web Player session backed by `sp_dc` cookie + WebView `/api/token`
+ * capture (same mechanism as Convx, without external TOTP secret dictionaries).
  */
 class SpotifyAuth(
     private val ctx: Context,
@@ -48,12 +57,16 @@ class SpotifyAuth(
     private val http: OkHttpClient,
 ) {
     private val kSpDc = stringPreferencesKey("sp_dc")
+    private val kAccessToken = stringPreferencesKey("access_token")
+    private val kTokenExp = longPreferencesKey("token_exp")
     private val kUserId = stringPreferencesKey("user_id")
     private val kUserName = stringPreferencesKey("user_name")
     private val kUserAvatar = stringPreferencesKey("user_avatar")
 
     private val _user = MutableStateFlow<SpotifyUser?>(null)
     val user: StateFlow<SpotifyUser?> = _user
+
+    private val refreshMutex = Mutex()
 
     @Volatile
     private var spDc: String? = null
@@ -64,21 +77,14 @@ class SpotifyAuth(
     @Volatile
     private var tokenExpiresAtMs = 0L
 
-    @Volatile
-    private var totpKey: ByteArray? = null
-
-    @Volatile
-    private var totpVersion: String? = null
-
-    @Volatile
-    private var secretsFetchedAt = 0L
-
     val isLoggedIn: Boolean get() = !spDc.isNullOrBlank()
 
     init {
         scope.launch {
             val p = ctx.spotifyAuthStore.data.first()
             spDc = p[kSpDc]?.takeIf { it.isNotBlank() }
+            accessToken = p[kAccessToken]?.takeIf { it.isNotBlank() }
+            tokenExpiresAtMs = p[kTokenExp] ?: 0L
             val id = p[kUserId]
             val name = p[kUserName]
             if (!spDc.isNullOrBlank() && !id.isNullOrBlank() && !name.isNullOrBlank()) {
@@ -87,31 +93,38 @@ class SpotifyAuth(
         }
     }
 
-    suspend fun setCookie(cookie: String): SpotifyUser = withContext(Dispatchers.IO) {
-        val clean = cookie.trim()
-        require(clean.isNotEmpty()) { "Cookie sp_dc kosong" }
-        val prevDc = spDc
-        spDc = clean
-        accessToken = null
-        tokenExpiresAtMs = 0L
-        try {
-            val token = accessToken(force = true) ?: throw IOException("Gagal mendapatkan token Spotify")
-            val me = fetchMe(token)
-            ctx.spotifyAuthStore.edit {
-                it[kSpDc] = clean
-                it[kUserId] = me.id
-                it[kUserName] = me.name
-                if (me.avatarUrl != null) it[kUserAvatar] = me.avatarUrl else it.remove(kUserAvatar)
+    /** Called after login WebView captures `sp_dc` (and optionally an already-minted token). */
+    suspend fun setSession(cookie: String, capturedToken: String? = null, capturedExpMs: Long = 0L): SpotifyUser =
+        withContext(Dispatchers.IO) {
+            val clean = cookie.trim()
+            require(clean.isNotEmpty()) { "Cookie sp_dc kosong" }
+            val prevDc = spDc
+            val prevToken = accessToken
+            val prevExp = tokenExpiresAtMs
+            spDc = clean
+            accessToken = capturedToken?.takeIf { it.isNotBlank() }
+            tokenExpiresAtMs = if (accessToken != null) capturedExpMs else 0L
+            try {
+                val token = accessToken(force = accessToken == null)
+                    ?: throw IOException("Gagal mendapatkan token Spotify")
+                val me = fetchMe(token)
+                ctx.spotifyAuthStore.edit {
+                    it[kSpDc] = clean
+                    it[kAccessToken] = token
+                    it[kTokenExp] = tokenExpiresAtMs
+                    it[kUserId] = me.id
+                    it[kUserName] = me.name
+                    if (me.avatarUrl != null) it[kUserAvatar] = me.avatarUrl else it.remove(kUserAvatar)
+                }
+                _user.value = me
+                me
+            } catch (e: Exception) {
+                spDc = prevDc
+                accessToken = prevToken
+                tokenExpiresAtMs = prevExp
+                throw e
             }
-            _user.value = me
-            me
-        } catch (e: Exception) {
-            spDc = prevDc
-            accessToken = null
-            tokenExpiresAtMs = 0L
-            throw e
         }
-    }
 
     fun logout() {
         spDc = null
@@ -189,7 +202,7 @@ class SpotifyAuth(
             pages++
         }
         if (tracks.isEmpty()) throw IOException("Belum ada lagu yang disukai di Spotify.")
-        SpotifyPlaylist("liked", "Liked Songs (Spotify)", tracks.firstOrNull()?.let { null }, tracks)
+        SpotifyPlaylist("liked", "Liked Songs (Spotify)", null, tracks)
     }
 
     private fun parseApiTrack(t: JSONObject): SpotifyTrack? {
@@ -208,7 +221,7 @@ class SpotifyAuth(
         val req = Request.Builder()
             .url("https://api.spotify.com/v1/me")
             .header("Authorization", "Bearer $token")
-            .header("User-Agent", UA)
+            .header("User-Agent", DESKTOP_UA)
             .build()
         val json = http.newCall(req).execute().use { r ->
             if (!r.isSuccessful) throw IOException("Spotify /me HTTP ${r.code}")
@@ -220,7 +233,7 @@ class SpotifyAuth(
         return SpotifyUser(id, name, avatar)
     }
 
-    private fun apiGet(url: String): JSONObject {
+    private suspend fun apiGet(url: String): JSONObject {
         val firstToken = accessToken(force = false) ?: accessToken(force = true)
             ?: throw IOException("Belum login Spotify")
         return runCatching { callApi(url, firstToken) }.getOrElse { err ->
@@ -234,7 +247,7 @@ class SpotifyAuth(
             .url(url)
             .header("Authorization", "Bearer $token")
             .header("Accept", "application/json")
-            .header("User-Agent", UA)
+            .header("User-Agent", DESKTOP_UA)
             .build()
         http.newCall(req).execute().use { r ->
             if (!r.isSuccessful) throw IOException("Spotify API HTTP ${r.code}")
@@ -242,92 +255,121 @@ class SpotifyAuth(
         }
     }
 
-    private fun accessToken(force: Boolean): String? {
+    private suspend fun accessToken(force: Boolean): String? {
         val dc = spDc?.takeIf { it.isNotBlank() } ?: return null
         val now = System.currentTimeMillis()
         if (!force) accessToken?.let { if (now < tokenExpiresAtMs - 60_000L) return it }
 
-        ensureSecrets(force)
-        val key = totpKey ?: return null
-        val version = totpVersion ?: return null
-
-        val serverSeconds = runCatching {
-            JSONObject(get("https://open.spotify.com/api/server-time")).optLong("serverTime")
-        }.getOrNull()?.takeIf { it > 0L } ?: (now / 1000L)
-
-        val url = "https://open.spotify.com/api/token".toHttpUrl().newBuilder()
-            .addQueryParameter("reason", "init")
-            .addQueryParameter("productType", "web_player")
-            .addQueryParameter("totp", totp(now / 1000L, key))
-            .addQueryParameter("totpVer", version)
-            .addQueryParameter("totpServer", totp(serverSeconds, key))
-            .build()
-
-        val req = Request.Builder()
-            .url(url)
-            .header("Cookie", "sp_dc=$dc")
-            .header("User-Agent", UA)
-            .header("Origin", "https://open.spotify.com")
-            .header("Referer", "https://open.spotify.com/")
-            .build()
-
-        val o = http.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) throw IOException("Token Spotify HTTP ${r.code}")
-            JSONObject(r.body?.string().orEmpty())
+        return refreshMutex.withLock {
+            val nowLocked = System.currentTimeMillis()
+            if (!force) accessToken?.let { if (nowLocked < tokenExpiresAtMs - 60_000L) return@withLock it }
+            val (tok, exp) = withContext(Dispatchers.Main) { harvestTokenInWebView(dc) }
+            accessToken = tok
+            tokenExpiresAtMs = exp
+            runCatching {
+                ctx.spotifyAuthStore.edit {
+                    it[kAccessToken] = tok
+                    it[kTokenExp] = exp
+                }
+            }
+            tok
         }
-        if (o.optBoolean("isAnonymous", true)) {
-            throw IOException("Sesi Spotify kedaluwarsa, silakan login ulang.")
-        }
-        val token = o.optString("accessToken").ifEmpty { return null }
-        accessToken = token
-        tokenExpiresAtMs = o.optLong("accessTokenExpirationTimestampMs", now + 25 * 60_000L)
-        return token
     }
 
-    private fun ensureSecrets(force: Boolean) {
-        val now = System.currentTimeMillis()
-        if (!force && totpKey != null && now - secretsFetchedAt < SECRETS_TTL_MS) return
-        val o = JSONObject(get(SECRETS_URL))
-        val newest = o.keys().asSequence().maxByOrNull { it.toIntOrNull() ?: 0 }
-            ?: throw IOException("empty secret dictionary")
-        val data = o.optJSONArray(newest) ?: throw IOException("bad secret dictionary")
-        val key = StringBuilder()
-        for (i in 0 until data.length()) key.append(data.optInt(i) xor ((i % 33) + 9))
-        totpKey = key.toString().toByteArray(Charsets.UTF_8)
-        totpVersion = newest
-        secretsFetchedAt = now
-    }
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+    private suspend fun harvestTokenInWebView(dc: String): Pair<String, Long> {
+        val result = CompletableDeferred<Pair<String, Long>>()
+        val cookies = CookieManager.getInstance().apply { setAcceptCookie(true) }
+        val saved = CompletableDeferred<Boolean>()
+        cookies.setCookie(ORIGIN, "sp_dc=$dc; Domain=.spotify.com; Path=/; Secure") { saved.complete(it) }
+        saved.await()
+        cookies.flush()
+        WebStorage.getInstance().deleteOrigin(ORIGIN)
 
-    private fun totp(seconds: Long, key: ByteArray): String {
-        val mac = Mac.getInstance("HmacSHA1").apply { init(SecretKeySpec(key, "HmacSHA1")) }
-        var counter = seconds / 30
-        val message = ByteArray(8)
-        for (i in 7 downTo 0) {
-            message[i] = (counter and 0xff).toByte()
-            counter = counter shr 8
-        }
-        val h = mac.doFinal(message)
-        val offset = h[19].toInt() and 0x0f
-        val code = ((h[offset].toInt() and 0x7f) shl 24) or
-            ((h[offset + 1].toInt() and 0xff) shl 16) or
-            ((h[offset + 2].toInt() and 0xff) shl 8) or
-            (h[offset + 3].toInt() and 0xff)
-        return (code % 1_000_000).toString().padStart(6, '0')
-    }
+        val view = WebView(ctx)
+        try {
+            view.settings.javaScriptEnabled = true
+            view.settings.domStorageEnabled = true
+            view.settings.userAgentString = DESKTOP_UA
+            cookies.setAcceptThirdPartyCookies(view, true)
+            view.addJavascriptInterface(
+                object {
+                    @JavascriptInterface
+                    fun postMessage(payload: String) {
+                        if (result.isCompleted) return
+                        parseTokenPayload(payload)?.let { result.complete(it) }
+                    }
+                },
+                BRIDGE,
+            )
+            view.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                    request.isForMainFrame && (
+                        request.url.scheme != "https" ||
+                            request.url.host?.let { it != "open.spotify.com" && it != "accounts.spotify.com" } != false
+                        )
 
-    private fun get(url: String): String {
-        val req = Request.Builder().url(url).header("User-Agent", UA).build()
-        http.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
-            return r.body?.string().orEmpty()
+                override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                    if (Uri.parse(url.orEmpty()).host == "open.spotify.com") {
+                        view.evaluateJavascript(TOKEN_HOOK, null)
+                    }
+                }
+
+                override fun onPageFinished(view: WebView, url: String?) {
+                    if (Uri.parse(url.orEmpty()).host == "open.spotify.com") {
+                        view.evaluateJavascript(TOKEN_HOOK, null)
+                    }
+                }
+            }
+            view.loadUrl("$ORIGIN/")
+            return withTimeoutOrNull(25_000L) { result.await() }
+                ?: throw IOException("Sesi Spotify tidak merespons. Coba masuk ulang.")
+        } finally {
+            view.stopLoading()
+            view.loadUrl("about:blank")
+            view.destroy()
+            result.cancel()
         }
     }
 
     companion object {
-        private const val SECRETS_URL =
-            "https://raw.githubusercontent.com/Thereallo1026/spotify-secrets/main/secrets/secretDict.json"
-        private const val SECRETS_TTL_MS = 6 * 60 * 60 * 1000L
-        private const val UA =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        private const val ORIGIN = "https://open.spotify.com"
+        const val BRIDGE = "MusikuSpotifyToken"
+        const val DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+        fun parseTokenPayload(payload: String, nowMs: Long = System.currentTimeMillis()): Pair<String, Long>? {
+            val o = runCatching { JSONObject(payload) }.getOrNull() ?: return null
+            if (o.optBoolean("isAnonymous", true)) return null
+            val token = o.optString("accessToken").takeIf { it.isNotBlank() } ?: return null
+            val exp = o.optLong("accessTokenExpirationTimestampMs", nowMs + 25 * 60_000L)
+            if (exp <= nowMs) return null
+            return token to exp
+        }
+
+        val TOKEN_HOOK = """
+            (function() {
+              if (location.origin !== '$ORIGIN' || window.__musikuSpotifyHook) return;
+              window.__musikuSpotifyHook = true;
+              function report(body) { try { window.$BRIDGE.postMessage(String(body)); } catch (_) {} }
+              function isToken(url) { try { var u = new URL(String(url), location.href); return u.origin === '$ORIGIN' && u.pathname === '/api/token'; } catch (_) { return false; } }
+              var fetchOrig = window.fetch;
+              window.fetch = function(input) {
+                var res = fetchOrig.apply(this, arguments);
+                if (isToken(input && input.url ? input.url : input)) {
+                  res.then(function(r) { r.clone().text().then(report).catch(function() {}); }).catch(function() {});
+                }
+                return res;
+              };
+              var open = XMLHttpRequest.prototype.open, send = XMLHttpRequest.prototype.send;
+              XMLHttpRequest.prototype.open = function(m, url) { this.__musikuTokenUrl = url; return open.apply(this, arguments); };
+              XMLHttpRequest.prototype.send = function() {
+                var xhr = this;
+                xhr.addEventListener('load', function() { if (isToken(xhr.__musikuTokenUrl)) { try { report(xhr.responseText); } catch (_) {} } });
+                return send.apply(this, arguments);
+              };
+              try { var s = document.getElementById('session'); if (s) report(s.textContent); } catch (_) {}
+            })();
+        """.trimIndent()
     }
 }
