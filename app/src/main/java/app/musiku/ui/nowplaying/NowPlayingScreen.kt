@@ -182,7 +182,23 @@ fun NowPlayingScreen(
             }
         }
 
-        Box(Modifier.fillMaxSize()) {
+        var sheetDragTotal by remember { mutableFloatStateOf(0f) }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    val threshold = 120.dp.toPx()
+                    detectVerticalDragGestures(
+                        onDragStart = { sheetDragTotal = 0f },
+                        onDragEnd = {
+                            if (sheetDragTotal > threshold) actions.onClose()
+                            sheetDragTotal = 0f
+                        },
+                        onDragCancel = { sheetDragTotal = 0f },
+                        onVerticalDrag = { _, dy -> sheetDragTotal += dy },
+                    )
+                },
+        ) {
             Column(
                 Modifier
                     .fillMaxSize()
@@ -322,22 +338,9 @@ fun NowPlayingScreen(
 @Composable
 private fun PlayerHandle(onClose: () -> Unit) {
     val closeSource = remember { MutableInteractionSource() }
-    var dragTotal by remember { mutableFloatStateOf(0f) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .pointerInput(Unit) {
-                val threshold = 120.dp.toPx()
-                detectVerticalDragGestures(
-                    onDragStart = { dragTotal = 0f },
-                    onDragEnd = {
-                        if (dragTotal > threshold) onClose()
-                        dragTotal = 0f
-                    },
-                    onDragCancel = { dragTotal = 0f },
-                    onVerticalDrag = { _, dy -> dragTotal += dy },
-                )
-            }
             .padding(top = 16.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

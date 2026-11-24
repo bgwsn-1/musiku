@@ -1,5 +1,6 @@
 package app.musiku.data
 
+import android.util.LruCache
 import app.musiku.model.AlbumDetail
 import app.musiku.model.AlbumSummary
 import app.musiku.model.ArtistCard
@@ -24,7 +25,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * YouTube Music metadata over the same InnerTube endpoints the web build reaches through
@@ -34,17 +34,20 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class YtMusic(private val http: OkHttpClient) {
 
-    private val cache = ConcurrentHashMap<String, Pair<Long, Any>>()
+    private val cache = LruCache<String, Pair<Long, Any>>(128)
 
     @Suppress("UNCHECKED_CAST")
     private suspend fun <T : Any> cached(key: String, block: suspend () -> T): T {
-        val hit = cache[key]
-        if (hit != null && hit.first > System.currentTimeMillis()) return hit.second as T
+        val hit = cache.get(key)
+        if (hit != null) {
+            if (hit.first > System.currentTimeMillis()) return hit.second as T
+            cache.remove(key)
+        }
         val v = block()
         // never cache an empty home/shelf payload: YouTube occasionally answers a cold request with
         // only the onboarding shelf, and caching that makes the app look broken for the whole TTL
         val empty = (v is Collection<*>) && v.isEmpty()
-        if (!empty) cache[key] = System.currentTimeMillis() + TTL to v
+        if (!empty) cache.put(key, System.currentTimeMillis() + TTL to v)
         return v
     }
 

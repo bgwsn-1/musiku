@@ -2,8 +2,10 @@ package app.musiku.ui.components
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
@@ -53,26 +55,38 @@ fun PillSlider(
         modifier
             .fillMaxWidth()
             .height(28.dp)
-            .pointerInput(enabled) {
-                if (!enabled) return@pointerInput
-                detectTapGestures { o -> latest((o.x / size.width).coerceIn(0f, 1f)) }
-            }
             .pointerInput(enabled, commitOnRelease) {
                 if (!enabled) return@pointerInput
-                detectHorizontalDragGestures(
-                    onDragStart = { o -> drag = (o.x / size.width).coerceIn(0f, 1f) },
-                    onDragEnd = {
-                        val f = drag
-                        if (f != null && commitOnRelease) latest(f)
-                        drag = null
-                    },
-                    onDragCancel = { drag = null },
-                    onHorizontalDrag = { change, _ ->
-                        val f = (change.position.x / size.width).coerceIn(0f, 1f)
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var dragged = false
+                    val slop = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
+                        change.consume()
+                        dragged = true
+                        val f = (change.position.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)
                         drag = f
                         if (!commitOnRelease) latest(f)
-                    },
-                )
+                    }
+                    if (dragged && slop != null) {
+                        val completed = horizontalDrag(slop.id) { change ->
+                            change.consume()
+                            val f = (change.position.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)
+                            drag = f
+                            if (!commitOnRelease) latest(f)
+                        }
+                        if (completed) {
+                            val f = drag
+                            if (f != null && commitOnRelease) latest(f)
+                        }
+                        drag = null
+                    } else if (!dragged) {
+                        val lastChange = currentEvent.changes.firstOrNull { it.id == down.id }
+                        if (lastChange != null && !lastChange.isConsumed && !lastChange.pressed) {
+                            lastChange.consume()
+                            latest((lastChange.position.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f))
+                        }
+                    }
+                }
             },
     ) {
         val barH = h.toPx()

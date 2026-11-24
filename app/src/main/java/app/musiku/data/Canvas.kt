@@ -4,6 +4,7 @@ import android.content.Context
 import app.musiku.model.Track
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -113,7 +114,7 @@ class Canvas(private val ctx: Context, private val http: OkHttpClient) {
     }
 
     /** Runs [block] with a token, minting a fresh one once if Spotify rejects the first. */
-    private inline fun <T> withToken(block: (String) -> T): T {
+    private suspend inline fun <T> withToken(block: (String) -> T): T {
         val first = accessToken() ?: accessToken(force = true) ?: error("no access token")
         return try {
             block(first)
@@ -278,7 +279,7 @@ class Canvas(private val ctx: Context, private val http: OkHttpClient) {
 
     // ── canvas lookup ────────────────────────────────────────────────────────
 
-    private fun canvasUrl(bearer: String, trackId: String): Lookup {
+    private suspend fun canvasUrl(bearer: String, trackId: String): Lookup {
         // The community Canvas service signs its own (logged-in) queries server side, so it can
         // see canvases that an anonymous session is not served. It 500s while refreshing its own
         // token, so a failed attempt is worth one more try before falling back.
@@ -296,7 +297,7 @@ class Canvas(private val ctx: Context, private val http: OkHttpClient) {
                 return Lookup.Empty
             }
             reason = response.exceptionOrNull()?.message?.take(70) ?: reason
-            if (attempt == 0) Thread.sleep(500)
+            if (attempt == 0) delay(500)
         }
 
         // Direct fallback: the same query the mobile client runs. Anonymous sessions are usually

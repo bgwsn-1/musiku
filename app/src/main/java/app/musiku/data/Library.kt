@@ -134,6 +134,8 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     /** Spotify track URI → the YouTube Music track it was matched to, so syncs skip old work. */
     private val spotifyCache = java.util.concurrent.ConcurrentHashMap<String, Track>()
     private val ready = kotlinx.coroutines.CompletableDeferred<Unit>()
+    private val pendingLock = Any()
+    private val pendingMutations = mutableListOf<() -> Unit>()
 
     val liked: StateFlow<List<Track>> = _liked
     val bookmarkedArtists: StateFlow<Set<String>> = _bookmarkedArtists
@@ -204,9 +206,28 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             _playerBackgroundStyle.value = PlayerBackgroundStyle.from(p[kPlayerBackgroundStyle] ?: 1)
             _playerLayoutOrder.value = PlayerSlot.orderFrom(p[kPlayerLayoutOrder])
             _playerLayoutHidden.value = PlayerSlot.hiddenFrom(p[kPlayerLayoutHidden])
-            loaded = true
+            val toRun = synchronized(pendingLock) {
+                loaded = true
+                pendingMutations.toList().also { pendingMutations.clear() }
+            }
+            toRun.forEach { it() }
             ready.complete(Unit)
         }
+    }
+
+    /**
+     * Runs [block] immediately once DataStore has loaded, or queues it to run right after initial
+     * load completes so early mutations never overwrite persisted state with empty defaults.
+     */
+    private fun afterLoad(block: () -> Unit) {
+        val runNow = synchronized(pendingLock) {
+            if (loaded) true
+            else {
+                pendingMutations += block
+                false
+            }
+        }
+        if (runNow) block()
     }
 
     private fun save(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
@@ -239,28 +260,28 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     // ── favourites ───────────────────────────────────────────────────────────
     fun isLiked(id: String) = _liked.value.any { it.videoId == id }
 
-    fun toggleLike(t: Track) {
+    fun toggleLike(t: Track) = afterLoad {
         _liked.value = if (isLiked(t.videoId)) _liked.value.filterNot { it.videoId == t.videoId } else listOf(t) + _liked.value
         saveLiked()
     }
 
     fun isArtistBookmarked(id: String) = id in _bookmarkedArtists.value
 
-    fun toggleArtistBookmark(id: String) {
+    fun toggleArtistBookmark(id: String) = afterLoad {
         _bookmarkedArtists.value = if (id in _bookmarkedArtists.value) _bookmarkedArtists.value - id else _bookmarkedArtists.value + id
         saveBookmarkedArtists()
     }
 
     // ── recents ──────────────────────────────────────────────────────────────
-    fun pushRecent(t: Track) {
+    fun pushRecent(t: Track) = afterLoad {
         _recent.value = (listOf(t) + _recent.value.filterNot { it.videoId == t.videoId }).take(30)
         saveRecent()
     }
 
     // ── play history ─────────────────────────────────────────────────────────
     /** Called once a track has actually been played, not on a quick skip. */
-    fun recordPlay(t: Track, durationMs: Long) {
-        if (!_historyEnabled.value || t.videoId.isBlank()) return
+    fun recordPlay(t: Track, durationMs: Long) = afterLoad {
+        if (!_historyEnabled.value || t.videoId.isBlank()) return@afterLoad
         val entry = PlayHistoryEntry(
             id = t.videoId,
             title = t.title,
@@ -273,17 +294,17 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
         savePlayHistory()
     }
 
-    fun removeHistoryEntry(id: String) {
+    fun removeHistoryEntry(id: String) = afterLoad {
         _playHistory.value = _playHistory.value.filterNot { it.id == id }
         savePlayHistory()
     }
 
-    fun clearHistory() {
+    fun clearHistory() = afterLoad {
         _playHistory.value = emptyList()
         savePlayHistory()
     }
 
-    fun setHistoryEnabled(on: Boolean) {
+    fun setHistoryEnabled(on: Boolean) = afterLoad {
         _historyEnabled.value = on
         save { it[kHistoryEnabled] = on }
     }
@@ -291,17 +312,19 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     // ── playlists ────────────────────────────────────────────────────────────
     fun createPlaylist(name: String, first: Track? = null): Playlist {
         val pl = Playlist(UUID.randomUUID().toString(), name.trim().ifEmpty { "Playlist baru" }, System.currentTimeMillis(), listOfNotNull(first))
-        _playlists.value = listOf(pl) + _playlists.value
-        savePlaylists()
+        afterLoad {
+            _playlists.value = listOf(pl) + _playlists.value
+            savePlaylists()
+        }
         return pl
     }
 
-    fun deletePlaylist(id: String) {
+    fun deletePlaylist(id: String) = afterLoad {
         _playlists.value = _playlists.value.filterNot { it.id == id }
         savePlaylists()
     }
 
-    fun renamePlaylist(id: String, name: String) {
+    fun renamePlaylist(id: String, name: String) = afterLoad {
         _playlists.value = _playlists.value.map { if (it.id == id) it.copy(name = name.trim().ifEmpty { it.name }) else it }
         savePlaylists()
     }
@@ -309,12 +332,16 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     fun addToPlaylist(id: String, t: Track): Boolean {
         val pl = _playlists.value.firstOrNull { it.id == id } ?: return false
         if (pl.tracks.any { it.videoId == t.videoId }) return false
-        _playlists.value = _playlists.value.map { if (it.id == id) it.copy(tracks = it.tracks + t) else it }
-        savePlaylists()
+        afterLoad {
+            val current = _playlists.value.firstOrNull { it.id == id } ?: return@afterLoad
+            if (current.tracks.any { it.videoId == t.videoId }) return@afterLoad
+            _playlists.value = _playlists.value.map { if (it.id == id) it.copy(tracks = it.tracks + t) else it }
+            savePlaylists()
+        }
         return true
     }
 
-    fun removeFromPlaylist(id: String, index: Int) {
+    fun removeFromPlaylist(id: String, index: Int) = afterLoad {
         _playlists.value = _playlists.value.map {
             if (it.id == id && index in it.tracks.indices) it.copy(tracks = it.tracks.toMutableList().also { l -> l.removeAt(index) }) else it
         }
@@ -331,8 +358,10 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             source = "spotify",
             sourceId = sourceId,
         )
-        _playlists.value = listOf(pl) + _playlists.value
-        savePlaylists()
+        afterLoad {
+            _playlists.value = listOf(pl) + _playlists.value
+            savePlaylists()
+        }
         return pl
     }
 
@@ -362,38 +391,38 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     }
 
     // ── settings ─────────────────────────────────────────────────────────────
-    fun setCrossfade(on: Boolean) { _crossfade.value = on; save { it[kCrossfade] = on } }
-    fun setCfSec(n: Int) { val v = if (n in CF_PRESETS) n else DEFAULT_CF_SEC; _cfSec.value = v; save { it[kCfSec] = v } }
-    fun setAutoplay(on: Boolean) { _autoplay.value = on; save { it[kAutoplay] = on } }
-    fun setShuffle(on: Boolean) { _shuffle.value = on; save { it[kShuffle] = on } }
-    fun setRepeat(mode: Int) { _repeat.value = mode; save { it[kRepeat] = mode } }
-    fun setLowDevice(on: Boolean) { _lowDevice.value = on; save { it[kLowDevice] = on } }
-    fun setCanvasEnabled(on: Boolean) { _canvasEnabled.value = on; save { it[kCanvasEnabled] = on } }
-    fun setArtistVideoEnabled(on: Boolean) { _artistVideo.value = on; save { it[kArtistVideo] = on } }
+    fun setCrossfade(on: Boolean) = afterLoad { _crossfade.value = on; save { it[kCrossfade] = on } }
+    fun setCfSec(n: Int) = afterLoad { val v = if (n in CF_PRESETS) n else DEFAULT_CF_SEC; _cfSec.value = v; save { it[kCfSec] = v } }
+    fun setAutoplay(on: Boolean) = afterLoad { _autoplay.value = on; save { it[kAutoplay] = on } }
+    fun setShuffle(on: Boolean) = afterLoad { _shuffle.value = on; save { it[kShuffle] = on } }
+    fun setRepeat(mode: Int) = afterLoad { _repeat.value = mode; save { it[kRepeat] = mode } }
+    fun setLowDevice(on: Boolean) = afterLoad { _lowDevice.value = on; save { it[kLowDevice] = on } }
+    fun setCanvasEnabled(on: Boolean) = afterLoad { _canvasEnabled.value = on; save { it[kCanvasEnabled] = on } }
+    fun setArtistVideoEnabled(on: Boolean) = afterLoad { _artistVideo.value = on; save { it[kArtistVideo] = on } }
 
     // ── player design (Convx `PlayerLook` / `PlayerArtworkStyle` / `PlayerBackgroundStyle`) ──
-    fun setPlayerLook(look: PlayerLook) {
+    fun setPlayerLook(look: PlayerLook) = afterLoad {
         _playerLook.value = look
         save { it[kPlayerLook] = look.ordinal }
     }
 
-    fun setPlayerArtworkStyle(style: PlayerArtworkStyle) {
+    fun setPlayerArtworkStyle(style: PlayerArtworkStyle) = afterLoad {
         _playerArtworkStyle.value = style
         save { it[kPlayerArtworkStyle] = style.ordinal }
     }
 
-    fun setPlayerBackgroundStyle(style: PlayerBackgroundStyle) {
+    fun setPlayerBackgroundStyle(style: PlayerBackgroundStyle) = afterLoad {
         _playerBackgroundStyle.value = style
         save { it[kPlayerBackgroundStyle] = style.ordinal }
     }
 
-    fun setPlayerLayoutOrder(order: List<PlayerSlot>) {
+    fun setPlayerLayoutOrder(order: List<PlayerSlot>) = afterLoad {
         val v = PlayerSlot.normalize(order)
         _playerLayoutOrder.value = v
         save { it[kPlayerLayoutOrder] = PlayerSlot.serializeOrder(v) }
     }
 
-    fun setPlayerLayoutHidden(hidden: Set<PlayerSlot>) {
+    fun setPlayerLayoutHidden(hidden: Set<PlayerSlot>) = afterLoad {
         val v = hidden.filter { it.hideable }.toSet()
         _playerLayoutHidden.value = v
         save { it[kPlayerLayoutHidden] = PlayerSlot.serializeHidden(v) }

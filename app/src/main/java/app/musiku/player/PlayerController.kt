@@ -25,6 +25,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -105,8 +108,12 @@ class PlayerController(
             val c = runCatching { future.get() }.getOrNull() ?: return@addListener
             controller = c
             c.addListener(listener)
-            c.shuffleModeEnabled = library.shuffle.value
-            c.repeatMode = when (library.repeat.value) { 1 -> Player.REPEAT_MODE_ALL; 2 -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }
+            scope.launch {
+                library.awaitReady()
+                c.shuffleModeEnabled = library.shuffle.value
+                c.repeatMode = when (library.repeat.value) { 1 -> Player.REPEAT_MODE_ALL; 2 -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }
+                syncUi()
+            }
             rebuildQueue()
             syncUi()
             pending.toList().also { pending.clear() }.forEach { it(c) }
@@ -159,6 +166,7 @@ class PlayerController(
         val c = controller ?: return
         val idx = c.currentMediaItemIndex
         val dur = c.duration.takeIf { it != C.TIME_UNSET && it > 0 }?.let { it / 1000f } ?: 0f
+        _position.value = (c.currentPosition / 1000f).coerceAtLeast(0f)
         _ui.value = _ui.value.copy(
             current = queueCache.getOrNull(idx),
             queue = queueCache,
@@ -207,35 +215,47 @@ class PlayerController(
         }
     }
 
-    /** position + the soft fade between songs (crossfade) */
+    /** position + the soft fade between songs (crossfade); only ticks while playing. */
     private suspend fun tick() {
         var fadingApplied = false
-        while (true) {
-            val c = controller
-            var fast = false
-            if (c != null) {
-                val posSec = c.currentPosition / 1000f
-                _position.value = posSec
-                noteHistory(c)
-                val dur = c.duration.takeIf { it != C.TIME_UNSET && it > 0 }?.let { it / 1000f } ?: 0f
-                if (dur != _ui.value.durationSec) _ui.value = _ui.value.copy(durationSec = dur)
+        ui.map { it.playing }
+            .distinctUntilChanged()
+            .collectLatest { isPlaying ->
+                if (!isPlaying) {
+                    val c = controller
+                    if (c != null && (fadingApplied || c.volume != 1f)) {
+                        c.volume = 1f
+                        fadingApplied = false
+                    }
+                    return@collectLatest
+                }
+                while (true) {
+                    val c = controller
+                    var fast = false
+                    if (c != null) {
+                        val posSec = c.currentPosition / 1000f
+                        _position.value = posSec
+                        noteHistory(c)
+                        val dur = c.duration.takeIf { it != C.TIME_UNSET && it > 0 }?.let { it / 1000f } ?: 0f
+                        if (dur != _ui.value.durationSec) _ui.value = _ui.value.copy(durationSec = dur)
 
-                val cf = library.cfSec.value.toFloat()
-                if (library.crossfade.value && dur > cf * 2 + 1 && c.playWhenReady) {
-                    val remain = dur - posSec
-                    val out = if (remain < cf) cos((1f - remain / cf).coerceIn(0f, 1f) * PI.toFloat() / 2f) else 1f
-                    val inn = if (posSec < cf) sin((posSec / cf).coerceIn(0f, 1f) * PI.toFloat() / 2f) else 1f
-                    val f = min(out, inn).coerceIn(0f, 1f)
-                    c.volume = f
-                    fadingApplied = f < 1f
-                    fast = true
-                } else if (fadingApplied || c.volume != 1f) {
-                    c.volume = 1f
-                    fadingApplied = false
+                        val cf = library.cfSec.value.toFloat()
+                        if (library.crossfade.value && dur > cf * 2 + 1 && c.playWhenReady) {
+                            val remain = dur - posSec
+                            val out = if (remain < cf) cos((1f - remain / cf).coerceIn(0f, 1f) * PI.toFloat() / 2f) else 1f
+                            val inn = if (posSec < cf) sin((posSec / cf).coerceIn(0f, 1f) * PI.toFloat() / 2f) else 1f
+                            val f = min(out, inn).coerceIn(0f, 1f)
+                            c.volume = f
+                            fadingApplied = f < 1f
+                            fast = true
+                        } else if (fadingApplied || c.volume != 1f) {
+                            c.volume = 1f
+                            fadingApplied = false
+                        }
+                    }
+                    delay(if (fast) 80 else 250)
                 }
             }
-            delay(if (fast) 80 else 250)
-        }
     }
 
     // ── system volume (the slider in the player drives the media stream) ─────
@@ -290,12 +310,14 @@ class PlayerController(
     }
 
     fun removeFromQueue(i: Int) = withController { c ->
-        if (i == c.currentMediaItemIndex) return@withController
+        if (i !in 0 until c.mediaItemCount || i == c.currentMediaItemIndex) return@withController
         c.removeMediaItem(i)
         autoplayFrom = autoplayFrom?.let { if (i < it) it - 1 else it }
     }
 
     fun jumpTo(i: Int) = withController { c ->
+        if (i !in 0 until c.mediaItemCount) return@withController
+        errorStreak = 0
         c.seekTo(i, 0L)
         c.play()
     }
@@ -304,14 +326,20 @@ class PlayerController(
 
     fun toggle() = withController { c ->
         when {
-            c.playbackState == Player.STATE_ENDED -> { c.seekTo(0L); c.play() }
+            c.playbackState == Player.STATE_ENDED -> { errorStreak = 0; c.seekTo(0L); c.play() }
             c.playWhenReady -> c.pause()
-            else -> { if (c.playbackState == Player.STATE_IDLE) c.prepare(); c.play() }
+            else -> { errorStreak = 0; if (c.playbackState == Player.STATE_IDLE) c.prepare(); c.play() }
         }
     }
 
-    fun next() = withController { c -> if (c.hasNextMediaItem()) c.seekToNextMediaItem() else say("Tidak ada lagu berikutnya") }
-    fun prev() = withController { it.seekToPrevious() }
+    fun next() = withController { c ->
+        errorStreak = 0
+        if (c.hasNextMediaItem()) c.seekToNextMediaItem() else say("Tidak ada lagu berikutnya")
+    }
+    fun prev() = withController {
+        errorStreak = 0
+        it.seekToPrevious()
+    }
     fun seek(sec: Float) = withController { it.seekTo((sec * 1000).toLong()); _position.value = sec }
 
     /**
