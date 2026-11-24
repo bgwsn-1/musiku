@@ -40,7 +40,9 @@ class MusikuApp : Application() {
     val library: Library by lazy { Library(this, scope) }
     val eqProcessor: CustomEqualizerAudioProcessor by lazy { CustomEqualizerAudioProcessor() }
     val downloads: OfflineDownloads by lazy { OfflineDownloads(this, scope, streams, library) }
-    val player: PlayerController by lazy { PlayerController(this, scope, library, yt) }
+    val player: PlayerController by lazy {
+        PlayerController(this, scope, library, yt, onTrackError = { streams.invalidate(it) })
+    }
     val spotify: Spotify by lazy { Spotify(http) }
     val canvas: Canvas by lazy { Canvas(this, http) }
     val artistVideo: ArtistArtworkVideo by lazy { ArtistArtworkVideo(http) }

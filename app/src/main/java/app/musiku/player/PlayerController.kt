@@ -64,6 +64,7 @@ class PlayerController(
     private val scope: CoroutineScope,
     val library: Library,
     private val yt: YtMusic,
+    private val onTrackError: (String) -> Unit = {},
 ) {
     private val _ui = MutableStateFlow(PlayerUi())
     val ui: StateFlow<PlayerUi> = _ui
@@ -140,6 +141,7 @@ class PlayerController(
 
         override fun onPlayerError(error: PlaybackException) {
             Log.e("Musiku", "playback error ${error.errorCodeName}: ${error.message}", error)
+            _ui.value.current?.videoId?.let(onTrackError)
             say("Gagal memutar lagu ini")
             val c = controller ?: return
             errorStreak++
