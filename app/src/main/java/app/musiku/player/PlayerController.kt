@@ -215,45 +215,22 @@ class PlayerController(
         }
     }
 
-    /** position + the soft fade between songs (crossfade); only ticks while playing. */
+    /** Updates playback position and play history while playing (crossfade runs in PlaybackService). */
     private suspend fun tick() {
-        var fadingApplied = false
         ui.map { it.playing }
             .distinctUntilChanged()
             .collectLatest { isPlaying ->
-                if (!isPlaying) {
-                    val c = controller
-                    if (c != null && (fadingApplied || c.volume != 1f)) {
-                        c.volume = 1f
-                        fadingApplied = false
-                    }
-                    return@collectLatest
-                }
+                if (!isPlaying) return@collectLatest
                 while (true) {
                     val c = controller
-                    var fast = false
                     if (c != null) {
                         val posSec = c.currentPosition / 1000f
                         _position.value = posSec
                         noteHistory(c)
                         val dur = c.duration.takeIf { it != C.TIME_UNSET && it > 0 }?.let { it / 1000f } ?: 0f
                         if (dur != _ui.value.durationSec) _ui.value = _ui.value.copy(durationSec = dur)
-
-                        val cf = library.cfSec.value.toFloat()
-                        if (library.crossfade.value && dur > cf * 2 + 1 && c.playWhenReady) {
-                            val remain = dur - posSec
-                            val out = if (remain < cf) cos((1f - remain / cf).coerceIn(0f, 1f) * PI.toFloat() / 2f) else 1f
-                            val inn = if (posSec < cf) sin((posSec / cf).coerceIn(0f, 1f) * PI.toFloat() / 2f) else 1f
-                            val f = min(out, inn).coerceIn(0f, 1f)
-                            c.volume = f
-                            fadingApplied = f < 1f
-                            fast = true
-                        } else if (fadingApplied || c.volume != 1f) {
-                            c.volume = 1f
-                            fadingApplied = false
-                        }
                     }
-                    delay(if (fast) 80 else 250)
+                    delay(250)
                 }
             }
     }

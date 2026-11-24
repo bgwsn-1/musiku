@@ -17,22 +17,27 @@ import app.musiku.MainActivity
 import app.musiku.MusikuApp
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 /**
- * Owns the real ExoPlayer. Because it is a MediaSessionService the music keeps playing with
- * the screen off and shows up on the lock screen / notification shade / Bluetooth controls.
- * Queue items carry `musiku://track/<videoId>`; the URL is resolved lazily when ExoPlayer
- * actually opens the item, so a long queue never resolves hundreds of streams up front.
+ * Owns the real ExoPlayer(s) and dual-player ping-pong [CrossfadeEngine]. Because it is a
+ * MediaSessionService the music keeps playing with the screen off and shows up on the lock screen
+ * / notification shade / Bluetooth controls.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
+    private lateinit var activePlayer: ExoPlayer
+    private var standbyPlayer: ExoPlayer? = null
+    private var crossfade: CrossfadeEngine? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    override fun onCreate() {
-        super.onCreate()
+    private fun createExoPlayer(handleAudioFocus: Boolean): ExoPlayer {
         val app = application as MusikuApp
-
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
@@ -42,19 +47,24 @@ class PlaybackService : MediaSessionService() {
                 .setAudioProcessors(arrayOf(app.eqProcessor))
                 .build()
         }
-
-        val player = ExoPlayer.Builder(this, renderersFactory)
+        return ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(DefaultMediaSourceFactory(app.downloads.playbackDataSourceFactory()))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build(),
-                /* handleAudioFocus = */ true,
+                handleAudioFocus,
             )
-            .setHandleAudioBecomingNoisy(true)
+            .setHandleAudioBecomingNoisy(handleAudioFocus)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        val app = application as MusikuApp
+        activePlayer = createExoPlayer(handleAudioFocus = true)
 
         val open = PendingIntent.getActivity(
             this, 0,
@@ -62,7 +72,7 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        session = MediaSession.Builder(this, player)
+        session = MediaSession.Builder(this, activePlayer)
             .setSessionActivity(open)
             .setCallback(object : MediaSession.Callback {
                 // Controllers only know the mediaId; the service decides what to actually stream.
@@ -78,6 +88,21 @@ class PlaybackService : MediaSessionService() {
                 }
             })
             .build()
+
+        crossfade = CrossfadeEngine(
+            scope = serviceScope,
+            active = { activePlayer },
+            standby = { standbyPlayer ?: createExoPlayer(handleAudioFocus = false).also { standbyPlayer = it } },
+            onHandoff = ::adoptPlayer,
+            isEnabled = { app.library.crossfade.value },
+            fadeDurationMs = { app.library.cfSec.value * 1000L },
+        ).also { it.start() }
+    }
+
+    private fun adoptPlayer(outgoing: ExoPlayer, incoming: ExoPlayer) {
+        activePlayer = incoming
+        standbyPlayer = outgoing
+        session?.player = incoming
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -88,10 +113,15 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        crossfade?.stop()
+        crossfade = null
+        serviceScope.cancel()
         session?.run {
             player.release()
             release()
         }
+        standbyPlayer?.release()
+        standbyPlayer = null
         session = null
         super.onDestroy()
     }
