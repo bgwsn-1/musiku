@@ -276,18 +276,20 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                 LocalGlassBackdrop provides if (lowDevice) null else glassBackdrop,
                 LocalGlassFrozen provides navFreeze.frozen,
             ) {
+                val skipBackdrop = lowDevice || route == Routes.SpotifyLogin
                 Box(
                     Modifier
                         .fillMaxSize()
                         .nestedScroll(dockScroll)
-                        // Low-device mode records no backdrop at all — glass surfaces go flat.
-                        .then(if (lowDevice) Modifier else Modifier.layerBackdrop(glassBackdrop))
+                        // Low-device mode or WebView routes record no backdrop at all — WebView
+                        // renders black inside an offscreen GraphicsLayer capture.
+                        .then(if (skipBackdrop) Modifier else Modifier.layerBackdrop(glassBackdrop))
                         // The Haze source only feeds the two glass surfaces that sample this state:
                         // the update prompt and the track context menu. Keeping it attached while
                         // neither is on screen made every scroll and every transition re-record the
                         // whole page for a surface nobody could see.
                         .then(
-                            if (!lowDevice && (updateVisible || ui.menuTrack != null)) {
+                            if (!skipBackdrop && (updateVisible || ui.menuTrack != null)) {
                                 Modifier.haze(hazeState)
                             } else {
                                 Modifier
@@ -394,7 +396,7 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
 
                 // floating dock: mini player (when something is queued) + tab bar, morphing into
                 // Convx's inline row on scroll-down. Settings is a page pushed over the tabs.
-                if (route != Routes.Settings && route != Routes.PlayerDesign) {
+                if (route != Routes.Settings && route != Routes.PlayerDesign && route != Routes.SpotifyLogin) {
                     val selectedTab = when {
                         route in TabRoutes -> route
                         else -> nav.previousBackStackEntry?.destination?.route?.takeIf { it in TabRoutes } ?: Routes.Home
