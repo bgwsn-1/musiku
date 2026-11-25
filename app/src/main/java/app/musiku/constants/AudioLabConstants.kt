@@ -29,6 +29,25 @@ enum class AudioPassMode(val minSdk: Int) {
 }
 enum class CrossmixMode { OFF, AUTO_CROSSFADE, MANUAL_CROSSFADE, CROSSMIX }
 enum class TransportEffect { OFF, TURNTABLE, TAPE, VINYL }
+enum class LyricsMotionStyle(
+    val displayName: String,
+    val description: String,
+    val risesWords: Boolean,
+    val shaded: Boolean,
+) {
+    MOTION("Style 1", "Words rise as they're sung, long notes swell, lines cascade", risesWords = true, shaded = true),
+    LEGACY("Style 2", "The original wave across the sung letters", risesWords = false, shaded = true),
+    BORING("Boring", "Style 1's rise, without the glow", risesWords = true, shaded = false),
+    PLAIN("Plain", "Style 2's sweep, without the glow or the wave", risesWords = false, shaded = false),
+}
+
+enum class PlayerBackgroundStyle {
+    COVER_GRADIENT,
+    SOLID,
+    DARK_GRADIENT,
+    APPLE_MUSIC,
+    AMBIENT,
+}
 
 val DefaultTransitionMode = CrossmixMode.OFF
 

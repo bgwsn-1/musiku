@@ -159,11 +159,13 @@ data class SearchResults(
 
 data class Lyrics(
     val lines: List<LyricLine> = emptyList(),
+    val entries: List<app.musiku.lyrics.LyricsEntry> = emptyList(),
     val synced: Boolean = false,
+    val wordSynced: Boolean = false,
     val plain: String? = null,
     val source: String? = null,
 ) {
-    val hasText get() = lines.isNotEmpty() || !plain.isNullOrBlank()
+    val hasText get() = entries.isNotEmpty() || lines.isNotEmpty() || !plain.isNullOrBlank()
 }
 
 data class Playlist(
