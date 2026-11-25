@@ -91,9 +91,21 @@ import app.musiku.ui.nowplaying.PlayerLook
 import app.musiku.ui.nowplaying.PlayerBackgroundStyle
 import app.musiku.ui.nowplaying.playerBackgroundAlpha
 import app.musiku.ui.nowplaying.playerContentAlpha
+import app.musiku.LocalPlayerConnection
+import app.musiku.PlayerConnectionShim
+import app.musiku.ui.component.LocalZoomOutOverlayState
+import app.musiku.ui.component.PopupSheetState
 import app.musiku.ui.screens.AlbumScreen
 import app.musiku.ui.screens.ArtistScreen
-import app.musiku.ui.screens.EqualizerScreen
+import app.musiku.ui.screens.audiolab.AudioFxScreen
+import app.musiku.ui.screens.audiolab.AudioLabScreen
+import app.musiku.ui.screens.audiolab.AudioPassScreen
+import app.musiku.ui.screens.audiolab.AudioQualityScreen
+import app.musiku.ui.screens.audiolab.mixer.BusScreen
+import app.musiku.ui.screens.audiolab.mixer.LiveprogEditorScreen
+import app.musiku.ui.screens.audiolab.mixer.MixerScreen
+import app.musiku.ui.screens.audiolab.stage.StageScreen
+import app.musiku.ui.screens.equalizer.EqualizerScreen
 import app.musiku.ui.screens.ExploreScreen
 import app.musiku.ui.screens.GenreScreen
 import app.musiku.ui.screens.HomeScreen
@@ -253,11 +265,15 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
     // drift away from the web on any phone where the user changed font size. Pin fontScale to 1
     // so the Compose tree measures exactly like the CSS.
     val density = LocalDensity.current
+    val popupSheet = remember { PopupSheetState() }
+    val playerConn = remember(app) { PlayerConnectionShim(app) }
     CompositionLocalProvider(
         LocalApp provides app,
         LocalUi provides ui,
         LocalDensity provides Density(density.density, fontScale = 1f),
         LocalLowDevice provides lowDevice,
+        LocalPlayerConnection provides playerConn,
+        LocalZoomOutOverlayState provides popupSheet,
     ) {
         // Liquid glass: the page content is drawn into one layer that every floating glass surface
         // (dock, tab bar, mini player) blurs behind itself — the Compose equivalent of the web's
@@ -271,6 +287,7 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
         val navFreeze = remember { NavTransitionFreeze() }
         LaunchedEffect(route) { navFreeze.mark() }
         Box(Modifier.fillMaxSize().background(Tok.Window)) {
+            popupSheet.Host()
             CompositionLocalProvider(
                 LocalHazeState provides if (lowDevice) null else hazeState,
                 LocalGlassBackdrop provides if (lowDevice) null else glassBackdrop,
@@ -313,7 +330,7 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                             SettingsScreen(
                                 onBack = { nav.popBackStack() },
                                 onPlayerDesign = { nav.navigate(Routes.PlayerDesign) },
-                                onEqualizer = { nav.navigate(Routes.Equalizer) },
+                                onEqualizer = { nav.navigate("audio_lab") },
                                 onSpotifyAccount = {
                                     nav.navigate(if (app.spotifyAuth.isLoggedIn) Routes.SpotifyLibrary else Routes.SpotifyLogin)
                                 },
@@ -323,7 +340,36 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
                             PlayerDesignScreen(onBack = { nav.popBackStack() })
                         }
                         composable(Routes.Equalizer) {
-                            EqualizerScreen(onBack = { nav.popBackStack() })
+                            EqualizerScreen(navController = nav)
+                        }
+                        composable("audio_lab") {
+                            AudioLabScreen(navController = nav)
+                        }
+                        composable("audio_fx") {
+                            AudioFxScreen(navController = nav)
+                        }
+                        composable("audio_stage") {
+                            StageScreen(navController = nav)
+                        }
+                        composable("audio_mixer") {
+                            MixerScreen(navController = nav)
+                        }
+                        composable("audio_mixer_bus/{busId}") { backStackEntry ->
+                            val busId = backStackEntry.arguments?.getString("busId")?.toIntOrNull() ?: 0
+                            BusScreen(navController = nav, busId = busId)
+                        }
+                        composable("audio_liveprog/{uid}") { backStackEntry ->
+                            val uid = backStackEntry.arguments?.getString("uid")?.toLongOrNull() ?: 0L
+                            LiveprogEditorScreen(navController = nav, uid = uid)
+                        }
+                        composable("audio_quality") {
+                            AudioQualityScreen(navController = nav)
+                        }
+                        composable("audio_pass") {
+                            AudioPassScreen(navController = nav)
+                        }
+                        composable("crossmix_settings") {
+                            LaunchedEffect(Unit) { nav.popBackStack() }
                         }
                         composable(Routes.Stats) {
                             StatsScreen(onBack = { nav.popBackStack() })
@@ -396,7 +442,16 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
 
                 // floating dock: mini player (when something is queued) + tab bar, morphing into
                 // Convx's inline row on scroll-down. Settings is a page pushed over the tabs.
-                if (route != Routes.Settings && route != Routes.PlayerDesign && route != Routes.Equalizer && route != Routes.SpotifyLogin) {
+                val isAudioLab = route == "audio_lab" ||
+                    route == "audio_fx" ||
+                    route == "audio_stage" ||
+                    route == "audio_mixer" ||
+                    route?.startsWith("audio_mixer_bus/") == true ||
+                    route?.startsWith("audio_liveprog/") == true ||
+                    route == "audio_quality" ||
+                    route == "audio_pass" ||
+                    route == "crossmix_settings"
+                if (route != Routes.Settings && route != Routes.PlayerDesign && route != Routes.Equalizer && route != Routes.SpotifyLogin && !isAudioLab) {
                     val selectedTab = when {
                         route in TabRoutes -> route
                         else -> nav.previousBackStackEntry?.destination?.route?.takeIf { it in TabRoutes } ?: Routes.Home

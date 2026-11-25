@@ -149,8 +149,8 @@ fun SettingsScreen(
                     SettingsChoiceRow(
                         icon = MIcons.Crossfade,
                         tint = SysBlue,
-                        title = "Equalizer",
-                        value = if (eqEnabled) eqPreset else "Mati",
+                        title = "AudioLab & Equalizer",
+                        value = if (eqEnabled) eqPreset else "Buka",
                         onClick = onEqualizer,
                     )
                     SettingsDivider()

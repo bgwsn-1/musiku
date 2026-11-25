@@ -14,14 +14,20 @@ import app.musiku.data.SpotifyImporter
 import app.musiku.data.StreamResolver
 import app.musiku.data.UpdateWorker
 import app.musiku.data.YtMusic
-import app.musiku.eq.CustomEqualizerAudioProcessor
-import app.musiku.eq.SpatialAudioProcessor
+import app.musiku.eq.AudioFxService
+import app.musiku.eq.AudioLabStore
+import app.musiku.eq.EqualizerService
+import app.musiku.eq.autoeq.AutoEqRepository
+import app.musiku.eq.mixer.MixerStore
+import app.musiku.eq.mixer.ModuleProcessors
+import app.musiku.eq.stage.StageNative
+import app.musiku.playback.audio.AudioOutputs
+import app.musiku.playback.audio.pass.AudioPass
 import app.musiku.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -40,8 +46,15 @@ class MusikuApp : Application() {
     val lyrics: LyricsRepo by lazy { LyricsRepo(http, yt) }
     val streams: StreamResolver by lazy { StreamResolver(http) }
     val library: Library by lazy { Library(this, scope) }
-    val eqProcessor: CustomEqualizerAudioProcessor by lazy { CustomEqualizerAudioProcessor() }
-    val spatialProcessor: SpatialAudioProcessor by lazy { SpatialAudioProcessor() }
+    val audioFx: AudioFxService by lazy { AudioFxService() }
+    val equalizerService: EqualizerService by lazy { EqualizerService() }
+    val eqProfiles: app.musiku.eq.data.EQProfileRepository by lazy { app.musiku.eq.data.EQProfileRepository(this) }
+    val moduleProcessors: ModuleProcessors by lazy { ModuleProcessors() }
+    val mixerStore: MixerStore by lazy { MixerStore(this, moduleProcessors) }
+    val audioLabStore: AudioLabStore by lazy { AudioLabStore(this, equalizerService, audioFx, eqProfiles, mixerStore) }
+    val autoEqRepository: AutoEqRepository by lazy { AutoEqRepository(this) }
+    val audioOutputs: AudioOutputs by lazy { AudioOutputs(this) }
+    val audioPass: AudioPass by lazy { AudioPass(this, audioOutputs) }
     val downloads: OfflineDownloads by lazy { OfflineDownloads(this, scope, streams, library) }
     val player: PlayerController by lazy {
         PlayerController(this, scope, library, yt, onTrackError = { streams.invalidate(it) })
@@ -59,14 +72,14 @@ class MusikuApp : Application() {
     override fun onCreate() {
         super.onCreate()
         UpdateWorker.schedule(this)
-        scope.launch {
-            combine(library.eqEnabled, library.eqProfile) { enabled, profile -> enabled to profile }
-                .collect { (enabled, profile) ->
-                    if (enabled) eqProcessor.applyProfile(profile) else eqProcessor.disable()
+        // Touch audioLabStore so saved EQ/FX/Mixer settings are applied at startup.
+        audioLabStore
+        scope.launch(Dispatchers.IO) {
+            if (StageNative.loaded) {
+                runCatching {
+                    assets.open("stage_hrtf.bin").use { StageNative.loadHrtf(it.readBytes()) }
                 }
-        }
-        scope.launch {
-            library.spatialAudio.collect { spatialProcessor.enabled = it }
+            }
         }
     }
 

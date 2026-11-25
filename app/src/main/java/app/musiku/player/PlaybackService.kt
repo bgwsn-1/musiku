@@ -16,6 +16,16 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import app.musiku.MainActivity
 import app.musiku.MusikuApp
+import app.musiku.eq.audio.CustomEqualizerAudioProcessor
+import app.musiku.eq.audio.EightDAudioProcessor
+import app.musiku.eq.audio.LoudnessAudioProcessor
+import app.musiku.eq.audio.ReverbAudioProcessor
+import app.musiku.eq.audio.SpatialAudioProcessor
+import app.musiku.eq.audio.StageAudioProcessor
+import app.musiku.eq.mixer.MixerAudioProcessor
+import app.musiku.playback.audio.PrecisionSink
+import app.musiku.playback.audio.pass.PassRouterSink
+import app.musiku.playback.audio.pass.PassSink
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
@@ -39,16 +49,35 @@ class PlaybackService : MediaSessionService() {
 
     private fun createExoPlayer(handleAudioFocus: Boolean): ExoPlayer {
         val app = application as MusikuApp
+        val eqProcessor = CustomEqualizerAudioProcessor()
+        app.equalizerService.addAudioProcessor(eqProcessor)
+        val mixerProcessor = MixerAudioProcessor(app.audioLabStore.mixer)
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
-            ): AudioSink = DefaultAudioSink.Builder(context)
-                .setEnableFloatOutput(enableFloatOutput)
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .setAudioProcessors(arrayOf(app.eqProcessor, app.spatialProcessor))
-                .build()
+            ): AudioSink {
+                val precisionSink = PrecisionSink(
+                    DefaultAudioSink.Builder(context)
+                        .setEnableFloatOutput(true)
+                        .setEnableAudioTrackPlaybackParams(true)
+                        .setAudioProcessors(
+                            arrayOf(
+                                eqProcessor,
+                                mixerProcessor,
+                                StageAudioProcessor(app.audioFx),
+                                SpatialAudioProcessor(app.audioFx),
+                                ReverbAudioProcessor(app.audioFx),
+                                LoudnessAudioProcessor(app.audioFx),
+                                EightDAudioProcessor(app.audioFx),
+                            ),
+                        )
+                        .build(),
+                    app.audioOutputs,
+                )
+                return PassRouterSink(precisionSink, PassSink(app.audioPass), app.audioPass)
+            }
         }
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(

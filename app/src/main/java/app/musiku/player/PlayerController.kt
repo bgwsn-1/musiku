@@ -250,6 +250,12 @@ class PlayerController(
         _ui.value = _ui.value.copy(volume = v.coerceIn(0f, 1f))
     }
 
+    fun setPlaybackParameters(speed: Float, pitch: Float) {
+        val params = androidx.media3.common.PlaybackParameters(speed, pitch)
+        val c = controller
+        if (c != null) c.setPlaybackParameters(params) else pending.add { it.setPlaybackParameters(params) }
+    }
+
     // ── queue ────────────────────────────────────────────────────────────────
 
     fun playTracks(tracks: List<Track>, start: Int = 0) {
