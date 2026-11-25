@@ -385,7 +385,10 @@ private fun PlayerCoverSlot(
         ),
         label = "coverScale",
     )
-    SideEffect { PlayerMorph.coverScale = scale }
+    SideEffect {
+        PlayerMorph.coverScale = if (hero) 1f else scale
+        PlayerMorph.isHero = hero
+    }
 
     val frame = if (hero) {
         Modifier

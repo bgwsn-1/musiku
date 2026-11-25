@@ -110,6 +110,9 @@ object PlayerMorph {
     /** The squared player's live pause shrink (0.729 when paused), so the flight lands on it. */
     var coverScale: Float by mutableFloatStateOf(1f)
 
+    /** True when the active player look is Hero (full-bleed), which has no square border/shadow. */
+    var isHero: Boolean by mutableStateOf(false)
+
     /** The mini thumb's live pause shrink, same role at the pill end. */
     var miniArtScale: Float by mutableFloatStateOf(1f)
 
@@ -422,30 +425,36 @@ private fun FlyingArtwork(progress: Animatable<Float, AnimationVector1D>, artwor
     if (artworkUrl == null) return
     if (miniLayout.width <= 0f || miniLayout.height <= 0f || full.width <= 0f || full.height <= 0f) return
 
+    val hero = PlayerMorph.isHero
     val density = LocalDensity.current
     val sidePx = maxOf(full.width, full.height)
-    val sideDp = with(density) { sidePx.toDp() }
+    val boxW = with(density) { (if (hero) full.width else sidePx).toDp() }
+    val boxH = with(density) { (if (hero) full.height else sidePx).toDp() }
     val mini = miniLayout.scaledAboutCenter(PlayerMorph.miniArtScale.coerceIn(0.1f, 1f))
     val miniRadius = with(density) { 8.dp.toPx() } * PlayerMorph.miniArtScale.coerceIn(0.1f, 1f)
-    val fullRadius = with(density) { 12.dp.toPx() }
-    val shadowPx = with(density) { 8.dp.toPx() }
+    val fullRadius = if (hero) 0f else with(density) { 12.dp.toPx() }
+    val shadowPx = if (hero) 0f else with(density) { 8.dp.toPx() }
 
     Box(
         Modifier
             .offset { IntOffset(full.left.roundToInt(), full.top.roundToInt()) }
-            .size(sideDp)
+            .size(boxW, boxH)
             .graphicsLayer {
                 val p = progress.value
                 if (p <= 0f || p >= 1f) {
                     alpha = 0f
                     return@graphicsLayer
                 }
-                alpha = 1f
-                val shrink = PlayerMorph.coverScale.coerceIn(0.1f, 1f)
+                alpha = if (hero) (1f - playerContentAlpha(p)).coerceIn(0f, 1f) else 1f
+                if (alpha <= 0f) return@graphicsLayer
+                val shrink = if (hero) 1f else PlayerMorph.coverScale.coerceIn(0.1f, 1f)
                 val target = full.scaledAboutCenter(shrink)
                 val window = artworkWindow(mini, target, p)
-                val imageSide = lerp(maxOf(mini.width, mini.height), sidePx * shrink, p)
-                val scale = imageSide / sidePx
+                val scale = if (hero) {
+                    lerp(mini.width / full.width, 1f, p).coerceAtLeast(0.05f)
+                } else {
+                    lerp(maxOf(mini.width, mini.height), sidePx * shrink, p) / sidePx
+                }
                 transformOrigin = TransformOrigin.Center
                 scaleX = scale
                 scaleY = scale
