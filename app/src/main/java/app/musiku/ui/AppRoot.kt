@@ -396,7 +396,7 @@ fun AppRoot(app: MusikuApp, lowDevice: Boolean) {
 
                 // floating dock: mini player (when something is queued) + tab bar, morphing into
                 // Convx's inline row on scroll-down. Settings is a page pushed over the tabs.
-                if (route != Routes.Settings && route != Routes.PlayerDesign && route != Routes.SpotifyLogin) {
+                if (route != Routes.Settings && route != Routes.PlayerDesign && route != Routes.Equalizer && route != Routes.SpotifyLogin) {
                     val selectedTab = when {
                         route in TabRoutes -> route
                         else -> nav.previousBackStackEntry?.destination?.route?.takeIf { it in TabRoutes } ?: Routes.Home

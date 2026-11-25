@@ -78,6 +78,7 @@ fun EqualizerScreen(onBack: () -> Unit) {
     val app = LocalApp.current
     val ctx = LocalContext.current
     val enabled by app.library.eqEnabled.collectAsState()
+    val spatial by app.library.spatialAudio.collectAsState()
     val preset by app.library.eqPreset.collectAsState()
     val profile by app.library.eqProfile.collectAsState()
 
@@ -137,6 +138,15 @@ fun EqualizerScreen(onBack: () -> Unit) {
                         subtitle = "Pemrosesan audio biquad parametrik langsung di player",
                         checked = enabled,
                         onCheckedChange = { app.library.setEqEnabled(it) },
+                    )
+                    SettingsDivider()
+                    SettingsToggleRow(
+                        icon = MIcons.Speaker,
+                        tint = SysTeal,
+                        title = "Spatial Audio",
+                        subtitle = "Pelebaran stereo & crossfeed untuk suara lebih luas",
+                        checked = spatial,
+                        onCheckedChange = { app.library.setSpatialAudio(it) },
                     )
                 }
             }

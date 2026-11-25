@@ -47,7 +47,7 @@ class PlaybackService : MediaSessionService() {
             ): AudioSink = DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(enableFloatOutput)
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .setAudioProcessors(arrayOf(app.eqProcessor))
+                .setAudioProcessors(arrayOf(app.eqProcessor, app.spatialProcessor))
                 .build()
         }
         val loadControl = DefaultLoadControl.Builder()

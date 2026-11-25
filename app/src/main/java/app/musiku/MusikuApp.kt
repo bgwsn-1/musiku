@@ -15,6 +15,7 @@ import app.musiku.data.StreamResolver
 import app.musiku.data.UpdateWorker
 import app.musiku.data.YtMusic
 import app.musiku.eq.CustomEqualizerAudioProcessor
+import app.musiku.eq.SpatialAudioProcessor
 import app.musiku.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +41,7 @@ class MusikuApp : Application() {
     val streams: StreamResolver by lazy { StreamResolver(http) }
     val library: Library by lazy { Library(this, scope) }
     val eqProcessor: CustomEqualizerAudioProcessor by lazy { CustomEqualizerAudioProcessor() }
+    val spatialProcessor: SpatialAudioProcessor by lazy { SpatialAudioProcessor() }
     val downloads: OfflineDownloads by lazy { OfflineDownloads(this, scope, streams, library) }
     val player: PlayerController by lazy {
         PlayerController(this, scope, library, yt, onTrackError = { streams.invalidate(it) })
@@ -62,6 +64,9 @@ class MusikuApp : Application() {
                 .collect { (enabled, profile) ->
                     if (enabled) eqProcessor.applyProfile(profile) else eqProcessor.disable()
                 }
+        }
+        scope.launch {
+            library.spatialAudio.collect { spatialProcessor.enabled = it }
         }
     }
 

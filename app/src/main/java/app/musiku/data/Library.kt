@@ -161,6 +161,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val kEqEnabled = booleanPreferencesKey("eqEnabled")
     private val kEqPreset = stringPreferencesKey("eqPreset")
     private val kEqProfile = stringPreferencesKey("eqProfile")
+    private val kSpatialAudio = booleanPreferencesKey("spatialAudio")
 
     private val _liked = MutableStateFlow<List<Track>>(emptyList())
     private val _downloadedTracks = MutableStateFlow<List<Track>>(emptyList())
@@ -186,6 +187,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     private val _eqEnabled = MutableStateFlow(false)
     private val _eqPreset = MutableStateFlow("Flat")
     private val _eqProfile = MutableStateFlow(EqualizerProfile())
+    private val _spatialAudio = MutableStateFlow(false)
 
     /** Spotify track URI → the YouTube Music track it was matched to, so syncs skip old work. */
     private val spotifyCache = java.util.concurrent.ConcurrentHashMap<String, Track>()
@@ -219,6 +221,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     val eqEnabled: StateFlow<Boolean> = _eqEnabled
     val eqPreset: StateFlow<String> = _eqPreset
     val eqProfile: StateFlow<EqualizerProfile> = _eqProfile
+    val spatialAudio: StateFlow<Boolean> = _spatialAudio
 
     @Volatile var loaded = false
         private set
@@ -286,6 +289,7 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
             _eqEnabled.value = p[kEqEnabled] ?: false
             _eqPreset.value = p[kEqPreset] ?: "Flat"
             _eqProfile.value = parseEqProfile(p[kEqProfile]) ?: EqualizerProfile()
+            _spatialAudio.value = p[kSpatialAudio] ?: false
             val toRun = synchronized(pendingLock) {
                 loaded = true
                 pendingMutations.toList().also { pendingMutations.clear() }
@@ -552,6 +556,11 @@ class Library(private val ctx: Context, private val scope: CoroutineScope) {
     fun setEqEnabled(on: Boolean) = afterLoad {
         _eqEnabled.value = on
         save { it[kEqEnabled] = on }
+    }
+
+    fun setSpatialAudio(on: Boolean) = afterLoad {
+        _spatialAudio.value = on
+        save { it[kSpatialAudio] = on }
     }
 
     fun selectEqPreset(name: String) = afterLoad {
